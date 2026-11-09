@@ -5,6 +5,7 @@
 package com.limelight.binding.input.virtual_controller.keyboard;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -48,6 +49,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
     private List<DigitalButtonListener> listeners = new ArrayList<>();
     private String text = "";
     private int icon = -1;
+    private String iconFile = null;
     private long timerLongClickTimeout = 300;
     private final Runnable longClickRunnable = new Runnable() {
         @Override
@@ -150,6 +152,12 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         invalidate();
     }
 
+    /** Icon from the imported layered layout; falls back to the text label if it is unavailable. */
+    public void setIconFile(String fileName) {
+        this.iconFile = fileName;
+        invalidate();
+    }
+
     public void setSticky(boolean sticky) {
         this.sticky = sticky;
     }
@@ -183,7 +191,20 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
             canvas.drawOval(rect, paint);
         }
 
-        if (icon != -1) {
+        Bitmap fileIcon = null;
+        if (iconFile != null) {
+            int inset = Math.max((int) paint.getStrokeWidth() * 2, getWidth() / 12);
+            fileIcon = IconCache.get(getContext(), iconFile, getWidth() - 2 * inset, getHeight() - 2 * inset);
+            if (fileIcon != null) {
+                Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+                bitmapPaint.setAlpha(shouldSetPressed ? 160 : 255);
+                canvas.drawBitmap(fileIcon, (getWidth() - fileIcon.getWidth()) / 2f, (getHeight() - fileIcon.getHeight()) / 2f, bitmapPaint);
+            }
+        }
+
+        if (fileIcon != null) {
+            // icon drawn above
+        } else if (icon != -1) {
             Drawable d = getResources().getDrawable(icon);
             d.setBounds(5, 5, getWidth() - 5, getHeight() - 5);
             d.draw(canvas);

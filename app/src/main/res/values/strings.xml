@@ -413,11 +413,12 @@
     <string name="title_auto_orientation">Auto Orientation</string>
     <string name="summary_auto_orientation">The streaming screen will be displayed according to the device\'s orientation when the stream begins.</string>
     <string name="title_import_layered_layout">Import Layered Layout</string>
-    <string name="summary_import_layered_layout">Layers, key sticks and layer-switch buttons from a layout.json file. Applies to the current keyboard profile; restart the stream to see it.</string>
+    <string name="summary_import_layered_layout">Layers, key sticks, layer-switch buttons and icons from a .zip (layout.json + PNG icons) or a bare layout.json. Applies to the current keyboard profile; restart the stream to see it.</string>
     <string name="title_clear_layered_layout">Remove Layered Layout</string>
     <string name="summary_clear_layered_layout">Go back to the normal keyboard controls for the current profile.</string>
     <string name="layered_layout_unreadable">The layered layout could not be read and was ignored</string>
     <string name="layered_layout_skipped">%d layered layout entries were skipped (see log)</string>
+    <string name="layered_layout_imported_icons">Import success! %d icons imported</string>
     <string name="layered_layout_removed">Layered layout removed</string>
     <string name="title_import_special_button">Import Custom Keys</string>
     <string name="summary_import_special_button">Available in Back Menu and special keys.\nNote: Importing will overwrite current configuration, please backup accordingly.</string>

@@ -44,6 +44,7 @@ public final class LayeredLayoutLoader {
     public static JSONObject addElements(KeyBoardController controller, Context context, NvConnection conn) {
         LayerManager layers = LayerManager.get();
         layers.clearLayout();
+        IconCache.clear();
 
         String text = LayeredLayoutStore.read(context);
         if (text == null) return null;
@@ -177,6 +178,15 @@ public final class LayeredLayoutLoader {
             for (int i = 0; i < vk.length; i++) vk[i] = keys.get(i);
             button = KeyBoardControllerConfigurationLoader.createCustomButton(
                     elementId, vk, 1, name, -1, b.optBoolean("sticky", false), controller, conn, context);
+        }
+
+        String icon = b.optString("icon", "");
+        if (!icon.isEmpty()) {
+            if (LayeredLayoutStore.isPlainFileName(icon)) {
+                button.setIconFile(icon);
+            } else {
+                LimeLog.warning("Layered layout: ignoring icon \"" + icon + "\" (must be a plain file name)");
+            }
         }
 
         layers.assign(elementId, onLayers);

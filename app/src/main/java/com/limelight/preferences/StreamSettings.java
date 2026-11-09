@@ -785,7 +785,9 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                     public boolean onPreferenceClick(Preference preference) {
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
-                        intent.setType("application/json");
+                        intent.setType("*/*");
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                                "application/json", "application/zip", "application/x-zip-compressed", "application/octet-stream"});
                         startActivityForResult(intent, READ_REQUEST_LAYERED_CODE);
                         return false;
                     }
@@ -905,13 +907,13 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
 
             if (requestCode == READ_REQUEST_LAYERED_CODE && resultCode == Activity.RESULT_OK && data.getData() != null) {
                 try {
-                    String json = FileUriUtils.openUriForRead(getActivity(), data.getData());
-                    if (TextUtils.isEmpty(json)) {
-                        Toast.makeText(getActivity(), getString(R.string.pref_empty_file), Toast.LENGTH_SHORT).show();
-                        return;
+                    int icons;
+                    try (java.io.InputStream in = requireActivity().getContentResolver().openInputStream(data.getData())) {
+                        icons = LayeredLayoutStore.importStream(requireActivity(), in);
                     }
-                    LayeredLayoutStore.importLayout(requireActivity(), json);
-                    Toast.makeText(getActivity(), getString(R.string.pref_import_success), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getActivity(), icons > 0
+                            ? getString(R.string.layered_layout_imported_icons, icons)
+                            : getString(R.string.pref_import_success), Toast.LENGTH_SHORT).show();
                 } catch (Exception e) {
                     e.printStackTrace();
                     Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), Toast.LENGTH_LONG).show();

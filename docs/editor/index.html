@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layered Layout Editor</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel2: #232730; --line: #343a46; --text: #e6e9ef; --muted: #8b93a3;
+    --accent: #4da3ff; --warn: #ffb454; --bad: #ff6b6b; --ok: #5ccf8a;
+    --screen: #0b0c0f; --btn: #8a93a6; --btn-fill: rgba(138,147,166,.16);
+  }
+  :root[data-theme="light"] {
+    --bg: #eef0f4; --panel: #ffffff; --panel2: #f3f5f8; --line: #d3d8e0; --text: #1a1d23; --muted: #667085;
+    --accent: #1c6fd1; --warn: #a55b00; --bad: #c62828; --ok: #1b7f4a;
+    --screen: #dfe3ea; --btn: #4a5568; --btn-fill: rgba(74,85,104,.14);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #eef0f4; --panel: #ffffff; --panel2: #f3f5f8; --line: #d3d8e0; --text: #1a1d23; --muted: #667085;
+      --accent: #1c6fd1; --warn: #a55b00; --bad: #c62828; --ok: #1b7f4a;
+      --screen: #dfe3ea; --btn: #4a5568; --btn-fill: rgba(74,85,104,.14);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px 1fr 300px; }
+  aside { background: var(--panel); overflow-y: auto; padding: 12px; }
+  #left { border-right: 1px solid var(--line); }
+  #right { border-left: 1px solid var(--line); }
+  #stage { position: relative; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; overflow: hidden; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
+  h2:first-child { margin-top: 0; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 2px; }
+  input[type=text], input[type=number], select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font: inherit; }
+  input.invalid { border-color: var(--bad); }
+  input[type=checkbox], input[type=radio] { margin-right: 6px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { flex: 1; min-width: 0; }
+  .row > .fixed { flex: 0 0 auto; }
+  button, .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .check { display: flex; align-items: center; font-size: 13px; color: var(--text); margin: 6px 0; }
+  .check input { margin: 0 6px 0 0; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .layer-item { display: flex; gap: 6px; align-items: center; padding: 4px; border-radius: 6px; border: 1px solid transparent; }
+  .layer-item.active { border-color: var(--accent); background: var(--panel2); }
+  .layer-item .id { flex: 0 0 22px; color: var(--muted); font-size: 12px; text-align: right; }
+  .layer-item input[type=text] { padding: 3px 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .warnbox { margin-top: 8px; font-size: 12px; }
+  .warnbox div { padding: 3px 0; color: var(--warn); }
+  .warnbox .ok { color: var(--ok); }
+
+  #screen { position: relative; background: var(--screen); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; touch-action: none; flex: 0 0 auto;
+    background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 10% 10%; background-position: -1px -1px; }
+  #screen.nogrid { background-image: none; }
+  .el { position: absolute; display: flex; align-items: center; justify-content: center; color: var(--text); border: 2px solid var(--btn); background: var(--btn-fill); cursor: grab; user-select: none; touch-action: none; overflow: hidden; }
+  .el.key, .el.switch { border-radius: 50%; }
+  .el.switch { border-style: dashed; }
+  .el.stick { border-radius: 50%; }
+  .el.stick::after { content: ""; position: absolute; width: 36%; height: 36%; border: 2px solid var(--btn); border-radius: 50%; }
+  .el.sticky { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .el.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 5; }
+  .el.dim { opacity: .3; }
+  .el img { position: absolute; inset: 8%; width: 84%; height: 84%; object-fit: contain; pointer-events: none; }
+  .el .lbl { pointer-events: none; font-weight: 600; text-align: center; padding: 0 2px; }
+  .el .tag { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); font-size: 9px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+  .handle { position: absolute; right: 0; bottom: 0; width: 22%; height: 22%; min-width: 10px; min-height: 10px; max-width: 18px; max-height: 18px; background: var(--accent); cursor: nwse-resize; border-radius: 3px 0 0 0; opacity: .0; }
+  .el.sel .handle { opacity: .9; }
+  #hint { position: absolute; left: 14px; bottom: 8px; font-size: 12px; color: var(--muted); }
+  @media (max-width: 1000px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto minmax(260px, 1fr) auto; overflow-y: auto; }
+    #left, #right { border: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Layered Layout Editor</h1>
+  <select id="preset" title="Screen resolution (landscape)" style="width:auto"></select>
+  <span id="customRes" class="row" style="display:none;width:auto">
+    <input type="number" id="resW" min="320" max="8000" style="width:78px"> ×
+    <input type="number" id="resH" min="320" max="8000" style="width:78px">
+  </span>
+  <select id="view" title="Which layer to show" style="width:auto"></select>
+  <select id="snap" title="Snap to grid" style="width:auto">
+    <option value="0">No snap</option><option value="0.005">Snap 0.5%</option><option value="0.01">Snap 1%</option><option value="0.025">Snap 2.5%</option><option value="0.05">Snap 5%</option>
+  </select>
+  <label class="check" style="margin:0"><input type="checkbox" id="grid" checked> Grid</label>
+  <span style="flex:1"></span>
+  <label class="btn">Icons folder…<input type="file" id="iconsInput" webkitdirectory multiple hidden></label>
+  <label class="btn">Open layout…<input type="file" id="openInput" accept=".json,application/json" hidden></label>
+  <button id="exportJson">Export layout.json</button>
+  <button id="exportZip" class="primary">Export .zip</button>
+  <button id="theme" title="Toggle light/dark">◐</button>
+</header>
+<main>
+  <aside id="left">
+    <h2>Add</h2>
+    <div class="row">
+      <button id="addKey">+ Key button</button>
+      <button id="addSwitch">+ Layer switch</button>
+    </div>
+    <div class="row" style="margin-top:6px"><button id="addStick">+ Key stick (WASD)</button></div>
+
+    <h2>Layers</h2>
+    <div id="layerList"></div>
+    <div class="row" style="margin-top:6px"><button id="addLayer">+ Add layer</button></div>
+    <div class="muted" style="margin-top:6px">A layer's modifiers (e.g. CTRL) are held with every button that sits only on that layer.</div>
+
+    <h2>Layout</h2>
+    <label class="check"><input type="checkbox" id="hideBuiltins"> Hide the app's default buttons</label>
+    <div class="muted">Gamepad analog sticks (the app's own overlay)</div>
+    <div id="gamepadBox"></div>
+
+    <h2>Icons</h2>
+    <div class="muted" id="iconStatus">No icons folder chosen. Icons still export by name; pick the folder to preview them and to bundle them in the .zip.</div>
+
+    <h2>Checks</h2>
+    <div class="warnbox" id="warnbox"></div>
+  </aside>
+  <section id="stage"><div id="screen"></div><div id="hint"></div></section>
+  <aside id="right"><div id="props"></div></aside>
+</main>
+
+<script>
+"use strict";
+
+/* ---------- constants ---------- */
+const PRESETS = [
+  ["Samsung S25 Ultra (3120×1440)", 3120, 1440],
+  ["Pixel 9 Pro (2992×1344)", 2992, 1344],
+  ["QHD 16:9 (2560×1440)", 2560, 1440],
+  ["20:9 (2400×1080)", 2400, 1080],
+  ["19.5:9 (2340×1080)", 2340, 1080],
+  ["FHD 16:9 (1920×1080)", 1920, 1080],
+  ["Tablet 16:10 (2560×1600)", 2560, 1600],
+];
+const STORE_KEY = "layered-layout-editor-v1";
+const NAMED_VK = ["CTRL", "SHIFT", "ALT", "WIN", "META", "SPACE", "ENTER", "ESC", "TAB"];
+const ANDROID_KEYS = ["W","A","S","D","Q","E","R","F","Z","X","C","V","SPACE","TAB","ENTER","ESCAPE","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","SHIFT_LEFT","CTRL_LEFT","ALT_LEFT","DEL","GRAVE","MINUS","EQUALS","COMMA","PERIOD","SLASH","PAGE_UP","PAGE_DOWN","MOVE_HOME","MOVE_END","INSERT"];
+
+/* ---------- state ---------- */
+function fresh() {
+  return {
+    res: { w: 3120, h: 1440 },
+    layers: [{ id: 0, name: "Main", modifiers: [] }],
+    els: [],
+    hideBuiltins: true,
+    gamepad: { left: null, right: null },
+    builtins: null,
+    snap: 0.005, grid: true, view: "all", sel: null, counter: 0,
+  };
+}
+let S = load() || fresh();
+let icons = {};               // file name -> { url, file }
+let iconNames = [];
+
+function load() {
+  try { const t = localStorage.getItem(STORE_KEY); if (t) return Object.assign(fresh(), JSON.parse(t)); } catch (e) { /* storage unavailable */ }
+  return null;
+}
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }, 200);
+}
+
+/* ---------- helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const round4 = (v) => Math.round(v * 10000) / 10000;
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const k in (attrs || {})) {
+    if (k === "class") n.className = attrs[k];
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] !== false && attrs[k] != null) n.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
+  }
+  for (const k of kids) n.append(k && k.nodeType ? k : document.createTextNode(k == null ? "" : k));
+  return n;
+}
+function getEl(uid) { return S.els.find((e) => e.uid === uid); }
+function selEl() { return S.sel == null ? null : getEl(S.sel); }
+function layerName(id) { const l = S.layers.find((x) => x.id === id); return l ? l.name : "?" + id; }
+function nextId(prefix) {
+  const used = new Set(S.els.map((e) => e.id));
+  let i = 1; while (used.has(prefix + i)) i++;
+  return prefix + i;
+}
+function snapv(v) { return S.snap > 0 ? Math.round(v / S.snap) * S.snap : v; }
+function onLayer(e, layerId) { return e.layers === "global" || e.layers.includes(layerId); }
+
+/* ---------- key validation (mirrors the app's parser) ---------- */
+function validVk(tok) {
+  const t = tok.trim(); if (!t) return false;
+  if (/^0x[0-9a-f]+$/i.test(t)) return true;
+  if (/^VK_[A-Z0-9_]+$/.test(t)) return true;
+  const u = t.toUpperCase();
+  if (/^[A-Z0-9]$/.test(u)) return true;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(u)) return true;
+  return NAMED_VK.includes(u);
+}
+function validAndroidKey(tok) {
+  const u = tok.trim().toUpperCase().replace(/^KEYCODE_/, "");
+  return /^[A-Z0-9]$/.test(u) || /^F([1-9]|1[0-2])$/.test(u) || ANDROID_KEYS.includes(u) || /^\d+$/.test(u);
+}
+function parseKeys(text) { return text.split(/[+,\s]+/).map((s) => s.trim()).filter(Boolean).map((s) => (s.length === 1 ? s.toUpperCase() : s)); }
+
+/* ---------- element creation ---------- */
+function addElement(kind) {
+  const base = { uid: ++S.counter, kind, layers: "global" };
+  const view = S.view === "all" ? null : Number(S.view);
+  if (view != null) base.layers = [view];
+  const w = kind === "stick" ? 0.1 : 0.05;
+  const h = round4(w * S.res.w / S.res.h);
+  const e = Object.assign(base, { x: round4(0.4 + (S.els.length % 8) * 0.02), y: round4(0.35 + (S.els.length % 8) * 0.03), w, h, name: "", id: "" });
+  if (kind === "key") Object.assign(e, { id: nextId("b"), name: "1", keys: ["1"], sticky: false, icon: "" });
+  if (kind === "switch") Object.assign(e, { id: nextId("sw"), name: ">", mode: "next", target: S.layers[0].id, icon: "", layers: "global" });
+  if (kind === "stick") Object.assign(e, { id: nextId("move"), w: 0.12, h: round4(0.12 * S.res.w / S.res.h), stick: { up: "W", down: "S", left: "A", right: "D", middle: "SPACE" }, layers: "global" });
+  S.els.push(e);
+  S.sel = e.uid;
+  renderAll();
+}
+
+/* ---------- rendering ---------- */
+const screenEl = $("screen");
+function fitScreen() {
+  const st = $("stage");
+  const aw = st.clientWidth - 24, ah = st.clientHeight - 24;
+  const ratio = S.res.w / S.res.h;
+  let w = aw, h = aw / ratio;
+  if (h > ah) { h = ah; w = ah * ratio; }
+  w = Math.max(200, Math.floor(w)); h = Math.max(100, Math.floor(h));
+  screenEl.style.width = w + "px"; screenEl.style.height = h + "px";
+  return w / S.res.w;       // css px per device px
+}
+function visibleInView(e) {
+  if (S.view === "all") return true;
+  return onLayer(e, Number(S.view));
+}
+function renderCanvas() {
+  const scale = fitScreen();
+  screenEl.classList.toggle("nogrid", !S.grid);
+  screenEl.textContent = "";
+  for (const e of S.els) {
+    if (!visibleInView(e)) continue;
+    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (e.uid === S.sel ? " sel" : "") });
+    n.dataset.uid = e.uid;
+    n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%";
+    n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%";
+    const pxH = e.h * S.res.h * scale;
+    const ic = e.icon && icons[e.icon];
+    if (ic) n.append(el("img", { src: ic.url, alt: "" }));
+    else if (e.kind !== "stick") { const l = el("div", { class: "lbl" }, e.name || e.id); l.style.fontSize = Math.max(8, pxH * 0.3) + "px"; n.append(l); }
+    if (e.kind === "stick") n.append(el("div", { class: "tag" }, e.id));
+    if (e.kind === "switch") n.append(el("div", { class: "tag" }, e.mode === "next" || e.mode === "prev" ? e.mode : e.mode + "→" + layerName(e.target)));
+    const hd = el("div", { class: "handle" }); hd.dataset.handle = "1"; n.append(hd);
+    screenEl.append(n);
+  }
+  $("hint").textContent = S.sel == null ? "Click an element to edit · drag to move · corner to resize" : "Arrows nudge · Shift+arrows ×10 · Del removes · Ctrl+D duplicates";
+}
+
+function renderLayers() {
+  const box = $("layerList"); box.textContent = "";
+  for (const l of S.layers) {
+    const row = el("div", { class: "layer-item" + (String(S.view) === String(l.id) ? " active" : "") });
+    row.append(el("span", { class: "id" }, String(l.id)));
+    const name = el("input", { type: "text", value: l.name });
+    name.addEventListener("input", () => { l.name = name.value; save(); renderView(); renderProps(); });
+    const mod = el("input", { type: "text", value: l.modifiers.join("+"), placeholder: "mods", title: "Modifiers held on this layer, e.g. CTRL or CTRL+SHIFT", style: "max-width:70px" });
+    mod.addEventListener("input", () => { l.modifiers = parseKeys(mod.value); mod.classList.toggle("invalid", !l.modifiers.every(validVk)); save(); renderWarnings(); });
+    mod.classList.toggle("invalid", !l.modifiers.every(validVk));
+    const show = el("button", { title: "Show only this layer", onclick: () => { S.view = String(l.id); renderAll(); } }, "👁");
+    const del = el("button", { class: "danger", title: "Delete layer", onclick: () => removeLayer(l.id) }, "×");
+    row.append(name, mod, show, del);
+    box.append(row);
+  }
+}
+function removeLayer(id) {
+  if (S.layers.length <= 1) { alert("A layout needs at least one layer."); return; }
+  const using = S.els.filter((e) => e.layers !== "global" && e.layers.includes(id)).length;
+  if (using && !confirm(using + " element(s) are on this layer. Remove the layer from them?")) return;
+  S.layers = S.layers.filter((l) => l.id !== id);
+  for (const e of S.els) {
+    if (e.layers !== "global") e.layers = e.layers.filter((x) => x !== id);
+    if (e.kind === "switch" && e.target === id) e.target = S.layers[0].id;
+  }
+  for (const k of ["left", "right"]) if (S.gamepad[k]) S.gamepad[k] = S.gamepad[k].filter((x) => x !== id);
+  if (S.view === String(id)) S.view = "all";
+  renderAll();
+}
+function renderView() {
+  const v = $("view"); v.textContent = "";
+  v.append(el("option", { value: "all" }, "Show: all layers"));
+  for (const l of S.layers) v.append(el("option", { value: String(l.id) }, "Layer " + l.id + " · " + l.name));
+  if (!S.layers.some((l) => String(l.id) === String(S.view))) S.view = "all";
+  v.value = String(S.view);
+}
+
+function layerPicker(value, onChange, allowGlobal) {
+  const wrap = el("div");
+  const isGlobal = value === "global";
+  if (allowGlobal) {
+    const g = el("label", { class: "check" });
+    const cb = el("input", { type: "checkbox" }); cb.checked = isGlobal;
+    cb.addEventListener("change", () => { onChange(cb.checked ? "global" : S.layers.map((l) => l.id).slice(0, 1)); renderProps(); renderCanvas(); renderWarnings(); });
+    g.append(cb, "Global (every layer)");
+    wrap.append(g);
+  }
+  if (!isGlobal) {
+    const chips = el("div", { class: "chips" });
+    for (const l of S.layers) {
+      const lab = el("label", { class: "check" });
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = value.includes(l.id);
+      cb.addEventListener("change", () => {
+        const cur = new Set(value); cb.checked ? cur.add(l.id) : cur.delete(l.id);
+        value = S.layers.map((x) => x.id).filter((x) => cur.has(x));
+        onChange(value); renderCanvas(); renderWarnings();
+      });
+      lab.append(cb, l.id + " " + l.name); chips.append(lab);
+    }
+    wrap.append(chips);
+  }
+  return wrap;
+}
+
+function renderGamepad() {
+  const box = $("gamepadBox"); box.textContent = "";
+  for (const [key, label] of [["left", "Left stick"], ["right", "Right stick"]]) {
+    const wrap = el("div");
+    const lab = el("label", { class: "check" });
+    const cb = el("input", { type: "checkbox" }); cb.checked = S.gamepad[key] != null;
+    cb.addEventListener("change", () => { S.gamepad[key] = cb.checked ? S.layers.map((l) => l.id).slice(0, 1) : null; save(); renderGamepad(); });
+    lab.append(cb, label + ": limit to layers");
+    wrap.append(lab);
+    if (S.gamepad[key] != null) wrap.append(layerPicker(S.gamepad[key], (v) => { S.gamepad[key] = v; save(); }, false));
+    box.append(wrap);
+  }
+}
+
+/* ---------- properties panel ---------- */
+function field(label, input) { return el("div", {}, el("label", {}, label), input); }
+function textInput(value, onInput, opts) {
+  const i = el("input", { type: "text", value: value == null ? "" : value, placeholder: (opts && opts.placeholder) || null, list: (opts && opts.list) || null });
+  i.addEventListener("input", () => { onInput(i.value, i); save(); });
+  return i;
+}
+function numInput(value, onInput) {
+  const i = el("input", { type: "number", step: "0.1", value: String(Math.round(value * 1000) / 10) });
+  i.addEventListener("input", () => { const v = parseFloat(i.value); if (!isNaN(v)) { onInput(v / 100); save(); } });
+  return i;
+}
+function renderProps() {
+  const p = $("props"); p.textContent = "";
+  const e = selEl();
+  if (!e) { p.append(el("div", { class: "muted" }, "Nothing selected. Add an element on the left, or click one on the canvas.")); return; }
+  const kindLabel = { key: "Key button", switch: "Layer switch", stick: "Key stick" }[e.kind];
+  p.append(el("h2", {}, kindLabel));
+
+  p.append(field("Id (unique)", textInput(e.id, (v, i) => { e.id = v.trim(); i.classList.toggle("invalid", !e.id || S.els.some((o) => o !== e && o.id === e.id)); renderCanvas(); renderWarnings(); })));
+  if (e.kind !== "stick") p.append(field("Label (shown if there is no icon)", textInput(e.name, (v) => { e.name = v; renderCanvas(); })));
+
+  if (e.kind === "key") {
+    p.append(field("Keys (e.g. CTRL+1, F5, 0x31)", textInput(e.keys.join("+"), (v, i) => { e.keys = parseKeys(v); i.classList.toggle("invalid", !e.keys.length || !e.keys.every(validVk)); renderWarnings(); })));
+    const st = el("label", { class: "check" }); const cb = el("input", { type: "checkbox" }); cb.checked = !!e.sticky;
+    cb.addEventListener("change", () => { e.sticky = cb.checked; save(); renderCanvas(); });
+    st.append(cb, "Sticky (long-press latches, e.g. Shift)"); p.append(st);
+  }
+  if (e.kind === "switch") {
+    const mode = el("select", {}, ...["hold", "toggle", "next", "prev"].map((m) => el("option", { value: m }, m)));
+    mode.value = e.mode; mode.addEventListener("change", () => { e.mode = mode.value; save(); renderProps(); renderCanvas(); renderWarnings(); });
+    p.append(field("Mode", mode));
+    if (e.mode === "hold" || e.mode === "toggle") {
+      const tg = el("select", {}, ...S.layers.map((l) => el("option", { value: String(l.id) }, l.id + " " + l.name)));
+      tg.value = String(e.target); tg.addEventListener("change", () => { e.target = Number(tg.value); save(); renderCanvas(); });
+      p.append(field("Target layer", tg));
+    }
+  }
+  if (e.kind !== "stick") {
+    p.append(field("Icon (PNG file name, optional)", textInput(e.icon, (v, i) => { e.icon = v.trim(); renderCanvas(); renderWarnings(); }, { list: "iconList" })));
+  } else {
+    for (const dir of ["up", "down", "left", "right", "middle"]) {
+      p.append(field("Key " + dir + (dir === "middle" ? " (double-tap, optional)" : ""), textInput(e.stick[dir] || "", (v, i) => {
+        if (v.trim()) e.stick[dir] = v.trim(); else delete e.stick[dir];
+        i.classList.toggle("invalid", !!v.trim() && !validAndroidKey(v)); renderWarnings();
+      }, { list: "akeyList" })));
+    }
+  }
+
+  p.append(el("h2", {}, "Layers"));
+  p.append(layerPicker(e.layers, (v) => { e.layers = v; save(); }, true));
+  if (e.kind === "switch" && e.layers !== "global") p.append(el("div", { class: "muted" }, "Tip: a switch used from several layers should be Global, or on all of them."));
+
+  p.append(el("h2", {}, "Position & size (% of screen)"));
+  const g = el("div", { class: "row" });
+  const geo = {};
+  for (const k of ["x", "y", "w", "h"]) {
+    const i = numInput(e[k], (v) => { e[k] = clamp(v, 0, 1); renderCanvas(); updatePx(); });
+    geo[k] = i; g.append(el("div", {}, el("label", {}, k.toUpperCase()), i));
+  }
+  p.append(g);
+  const px = el("div", { class: "muted", id: "pxInfo" });
+  p.append(px);
+  function updatePx() { px.textContent = "≈ " + Math.round(e.w * S.res.w) + " × " + Math.round(e.h * S.res.h) + " px, at " + Math.round(e.x * S.res.w) + "," + Math.round(e.y * S.res.h); }
+  updatePx();
+  p._geo = geo; p._updatePx = updatePx;
+  const sq = el("button", { onclick: () => { e.h = round4(clamp(e.w * S.res.w / S.res.h, 0.01, 1)); renderProps(); renderCanvas(); save(); } }, "Make square");
+  const dup = el("button", { onclick: duplicate }, "Duplicate");
+  const del = el("button", { class: "danger", onclick: removeSelected }, "Delete");
+  p.append(el("div", { class: "row", style: "margin-top:8px" }, sq, dup, del));
+}
+function syncGeo() {
+  const p = $("props"), e = selEl(); if (!e || !p._geo) return;
+  for (const k of ["x", "y", "w", "h"]) p._geo[k].value = String(Math.round(e[k] * 1000) / 10);
+  if (p._updatePx) p._updatePx();
+}
+
+function duplicate() {
+  const e = selEl(); if (!e) return;
+  const c = JSON.parse(JSON.stringify(e));
+  c.uid = ++S.counter; c.id = nextId(e.kind === "key" ? "b" : e.kind === "switch" ? "sw" : "stick");
+  c.x = clamp(e.x + 0.02, 0, 1 - e.w); c.y = clamp(e.y + 0.03, 0, 1 - e.h);
+  S.els.push(c); S.sel = c.uid; renderAll();
+}
+function removeSelected() {
+  if (S.sel == null) return;
+  S.els = S.els.filter((e) => e.uid !== S.sel); S.sel = null; renderAll();
+}
+
+/* ---------- validation ---------- */
+function validate() {
+  const out = [];
+  const ids = {};
+  for (const e of S.els) {
+    const who = e.id || "(no id)";
+    if (!e.id) out.push("An element has no id.");
+    else if (ids[e.id]) out.push("Duplicate id: " + e.id); else ids[e.id] = 1;
+    if (e.layers !== "global" && e.layers.length === 0) out.push(who + ": no layer selected, it would never show.");
+    if (e.kind === "key") {
+      if (!e.keys.length) out.push(who + ": no keys.");
+      else for (const k of e.keys) if (!validVk(k)) out.push(who + ': unknown key "' + k + '".');
+    }
+    if (e.kind === "switch") {
+      if ((e.mode === "hold" || e.mode === "toggle") && !S.layers.some((l) => l.id === e.target)) out.push(who + ": target layer missing.");
+      if (e.layers !== "global" && S.layers.length > 1) out.push(who + ": switch is not global; make sure it exists on every layer you switch from or to.");
+    }
+    if (e.kind === "stick") {
+      for (const d of ["up", "down", "left", "right"]) if (!e.stick[d]) out.push(who + ": stick has no " + d + " key.");
+      for (const d in e.stick) if (!validAndroidKey(e.stick[d])) out.push(who + ": unknown stick key \"" + e.stick[d] + "\".");
+    }
+    if (e.icon) {
+      if (/[\\/]/.test(e.icon)) out.push(who + ": icon must be a plain file name.");
+      else if (iconNames.length && !icons[e.icon]) {
+        const alt = iconNames.find((n) => n.toLowerCase() === e.icon.toLowerCase());
+        out.push(who + ': icon "' + e.icon + '" not in the folder' + (alt ? " (did you mean " + alt + "? names are case-sensitive)" : "") + ".");
+      }
+    }
+  }
+  for (const l of S.layers) for (const m of l.modifiers) if (!validVk(m)) out.push('Layer "' + l.name + '": unknown modifier "' + m + '".');
+  return out;
+}
+function renderWarnings() {
+  const w = validate(); const box = $("warnbox"); box.textContent = "";
+  if (!w.length) box.append(el("div", { class: "ok" }, "No problems found."));
+  for (const t of w.slice(0, 40)) box.append(el("div", {}, "• " + t));
+  save();
+  return w;
+}
+
+/* ---------- export / import ---------- */
+function layerValue(l) { return l === "global" ? "global" : l.length === 1 ? l[0] : l.slice(); }
+function buildLayout() {
+  const L = { format: "artemis-layers", version: 1 };
+  if (S.hideBuiltins) L.hideBuiltins = true;
+  L.layers = S.layers.map((l) => { const o = { id: l.id, name: l.name }; if (l.modifiers.length) o.modifiers = l.modifiers.slice(); return o; });
+  L.buttons = []; L.sticks = [];
+  for (const e of S.els) {
+    const geo = { x: round4(e.x), y: round4(e.y), w: round4(e.w), h: round4(e.h) };
+    if (e.kind === "stick") {
+      L.sticks.push(Object.assign({ id: e.id, layer: layerValue(e.layers) }, geo, { keys: Object.assign({}, e.stick) }));
+      continue;
+    }
+    const b = Object.assign({ id: e.id, layer: layerValue(e.layers) }, geo, { name: e.name });
+    if (e.icon) b.icon = e.icon;
+    if (e.kind === "switch") {
+      b.action = { type: "layer", mode: e.mode };
+      if (e.mode === "hold" || e.mode === "toggle") b.action.target = e.target;
+    } else {
+      b.keys = e.keys.slice();
+      if (e.sticky) b.sticky = true;
+    }
+    L.buttons.push(b);
+  }
+  if (!L.sticks.length) delete L.sticks;
+  if (S.gamepad.left || S.gamepad.right) {
+    L.gamepad = {};
+    if (S.gamepad.left) L.gamepad.leftStick = S.gamepad.left.slice();
+    if (S.gamepad.right) L.gamepad.rightStick = S.gamepad.right.slice();
+  }
+  if (S.builtins) L.builtins = S.builtins;
+  return L;
+}
+function parseLayerSpec(v) {
+  if (typeof v === "number") return [v];
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "number");
+  return "global";
+}
+function importLayout(L) {
+  if (!L || L.format !== "artemis-layers") throw new Error('Not an "artemis-layers" file');
+  const n = fresh();
+  n.res = S.res; n.snap = S.snap; n.grid = S.grid;
+  n.hideBuiltins = !!L.hideBuiltins;
+  n.layers = (L.layers && L.layers.length ? L.layers : [{ id: 0, name: "Main" }]).map((l) => ({ id: l.id, name: l.name || "Layer " + l.id, modifiers: (l.modifiers || []).map(String) }));
+  for (const b of L.buttons || []) {
+    const e = { uid: ++n.counter, id: String(b.id), layers: parseLayerSpec(b.layer), x: +b.x || 0, y: +b.y || 0, w: +b.w || 0.05, h: +b.h || 0.05, name: b.name || "", icon: b.icon || "" };
+    if (b.action && b.action.type === "layer") { e.kind = "switch"; e.mode = b.action.mode || "hold"; e.target = b.action.target != null ? b.action.target : n.layers[0].id; }
+    else { e.kind = "key"; e.keys = (b.keys || []).map(String); e.sticky = !!b.sticky; }
+    n.els.push(e);
+  }
+  for (const s of L.sticks || []) {
+    n.els.push({ uid: ++n.counter, kind: "stick", id: String(s.id), layers: parseLayerSpec(s.layer), x: +s.x || 0, y: +s.y || 0, w: +s.w || 0.1, h: +s.h || 0.1, name: "", icon: "", stick: Object.assign({}, s.keys || {}) });
+  }
+  if (L.gamepad) {
+    n.gamepad.left = Array.isArray(L.gamepad.leftStick) ? L.gamepad.leftStick : null;
+    n.gamepad.right = Array.isArray(L.gamepad.rightStick) ? L.gamepad.rightStick : null;
+  }
+  n.builtins = L.builtins || null;
+  S = n;
+  renderAll();
+}
+function download(name, blob) {
+  const a = el("a", { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* minimal ZIP writer (stored, no compression) */
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let c = 0xffffffff; for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function makeZip(files) {           // files: [{name, data: Uint8Array}]
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + size;
+  }
+  let cdSize = 0; for (const c of central) cdSize += c.length;
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+}
+
+function confirmProblems() {
+  const w = validate();
+  return !w.length || confirm("The checks found " + w.length + " problem(s):\n\n" + w.slice(0, 8).join("\n") + (w.length > 8 ? "\n…" : "") + "\n\nExport anyway?");
+}
+$("exportJson").addEventListener("click", () => {
+  if (!confirmProblems()) return;
+  download("layout.json", new Blob([JSON.stringify(buildLayout(), null, 2)], { type: "application/json" }));
+});
+$("exportZip").addEventListener("click", async () => {
+  if (!confirmProblems()) return;
+  const layout = buildLayout();
+  const files = [{ name: "layout.json", data: new TextEncoder().encode(JSON.stringify(layout, null, 2)) }];
+  const used = new Set(S.els.map((e) => e.icon).filter((n) => n && !/[\\/]/.test(n)));
+  const missing = [];
+  for (const name of used) {
+    if (icons[name]) files.push({ name: "icons/" + name, data: new Uint8Array(await icons[name].file.arrayBuffer()) }); else missing.push(name);
+  }
+  if (missing.length && !confirm("These icons are not in the chosen folder and will be left out (the app shows the label instead):\n\n" + missing.join("\n") + "\n\nContinue?")) return;
+  download("layered-layout.zip", makeZip(files));
+});
+$("openInput").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
+  try { importLayout(JSON.parse(await f.text())); } catch (err) { alert("Could not open: " + err.message); }
+});
+$("iconsInput").addEventListener("change", (ev) => {
+  for (const k in icons) URL.revokeObjectURL(icons[k].url);
+  icons = {}; iconNames = [];
+  for (const f of ev.target.files) {
+    const base = f.name;
+    if (!/\.png$/i.test(base)) continue;
+    icons[base] = { url: URL.createObjectURL(f), file: f }; iconNames.push(base);
+  }
+  iconNames.sort();
+  const dl = $("iconList"); dl.textContent = "";
+  for (const n of iconNames) dl.append(el("option", { value: n }));
+  $("iconStatus").textContent = iconNames.length ? iconNames.length + " PNG icons loaded." : "No PNG files found in that folder.";
+  renderCanvas(); renderWarnings();
+});
+
+/* ---------- interaction ---------- */
+let drag = null;
+screenEl.addEventListener("pointerdown", (ev) => {
+  const t = ev.target.closest(".el");
+  if (!t) { if (S.sel != null) { S.sel = null; renderAll(); } return; }
+  const e = getEl(Number(t.dataset.uid)); if (!e) return;
+  const wasSel = S.sel === e.uid;
+  S.sel = e.uid;
+  const rect = screenEl.getBoundingClientRect();
+  drag = { uid: e.uid, resize: !!ev.target.dataset.handle, sx: ev.clientX, sy: ev.clientY, x: e.x, y: e.y, w: e.w, h: e.h, rect };
+  screenEl.setPointerCapture(ev.pointerId);
+  if (!wasSel) { renderCanvas(); renderProps(); }
+  ev.preventDefault();
+});
+screenEl.addEventListener("pointermove", (ev) => {
+  if (!drag) return;
+  const e = getEl(drag.uid); if (!e) return;
+  const dx = (ev.clientX - drag.sx) / drag.rect.width, dy = (ev.clientY - drag.sy) / drag.rect.height;
+  if (drag.resize) {
+    let w = clamp(snapv(drag.w + dx), 0.01, 1 - e.x);
+    let h = clamp(snapv(drag.h + dy), 0.01, 1 - e.y);
+    // elements stay square in pixels unless Alt is held
+    if (!ev.altKey) { const hh = w * S.res.w / S.res.h; if (hh <= 1 - e.y) h = hh; else { h = 1 - e.y; w = h * S.res.h / S.res.w; } }
+    e.w = round4(w); e.h = round4(h);
+  } else {
+    e.x = round4(clamp(snapv(drag.x + dx), 0, 1 - e.w));
+    e.y = round4(clamp(snapv(drag.y + dy), 0, 1 - e.h));
+  }
+  const n = screenEl.querySelector('.el[data-uid="' + e.uid + '"]');
+  if (n) { n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%"; n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%"; }
+  syncGeo();
+});
+function endDrag() { if (drag) { drag = null; save(); renderCanvas(); } }
+screenEl.addEventListener("pointerup", endDrag);
+screenEl.addEventListener("pointercancel", endDrag);
+document.addEventListener("keydown", (ev) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (/INPUT|SELECT|TEXTAREA/.test(tag)) return;
+  const e = selEl(); if (!e) return;
+  const step = (S.snap > 0 ? S.snap : 0.001) * (ev.shiftKey ? 10 : 1);
+  let moved = true;
+  if (ev.key === "ArrowLeft") e.x = round4(clamp(e.x - step, 0, 1 - e.w));
+  else if (ev.key === "ArrowRight") e.x = round4(clamp(e.x + step, 0, 1 - e.w));
+  else if (ev.key === "ArrowUp") e.y = round4(clamp(e.y - step, 0, 1 - e.h));
+  else if (ev.key === "ArrowDown") e.y = round4(clamp(e.y + step, 0, 1 - e.h));
+  else if (ev.key === "Delete" || ev.key === "Backspace") { removeSelected(); ev.preventDefault(); return; }
+  else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "d") { duplicate(); ev.preventDefault(); return; }
+  else moved = false;
+  if (moved) { ev.preventDefault(); renderCanvas(); syncGeo(); save(); }
+});
+
+/* ---------- header / panel wiring ---------- */
+function setupHeader() {
+  const sel = $("preset");
+  PRESETS.forEach((p, i) => sel.append(el("option", { value: String(i) }, p[0])));
+  sel.append(el("option", { value: "custom" }, "Custom…"));
+  const idx = PRESETS.findIndex((p) => p[1] === S.res.w && p[2] === S.res.h);
+  sel.value = idx >= 0 ? String(idx) : "custom";
+  $("customRes").style.display = idx >= 0 ? "none" : "flex";
+  $("resW").value = S.res.w; $("resH").value = S.res.h;
+  sel.addEventListener("change", () => {
+    if (sel.value === "custom") { $("customRes").style.display = "flex"; return; }
+    $("customRes").style.display = "none";
+    setRes(PRESETS[+sel.value][1], PRESETS[+sel.value][2]);
+  });
+  const custom = () => { const w = parseInt($("resW").value, 10), h = parseInt($("resH").value, 10); if (w >= 320 && h >= 320) setRes(w, h); };
+  $("resW").addEventListener("change", custom); $("resH").addEventListener("change", custom);
+  $("view").addEventListener("change", () => { S.view = $("view").value; renderAll(); });
+  $("snap").value = String(S.snap); $("snap").addEventListener("change", () => { S.snap = parseFloat($("snap").value); save(); });
+  $("grid").checked = S.grid; $("grid").addEventListener("change", () => { S.grid = $("grid").checked; renderCanvas(); save(); });
+  $("hideBuiltins").checked = S.hideBuiltins; $("hideBuiltins").addEventListener("change", () => { S.hideBuiltins = $("hideBuiltins").checked; save(); });
+  $("addKey").addEventListener("click", () => addElement("key"));
+  $("addSwitch").addEventListener("click", () => addElement("switch"));
+  $("addStick").addEventListener("click", () => addElement("stick"));
+  $("addLayer").addEventListener("click", () => {
+    const id = Math.max(...S.layers.map((l) => l.id)) + 1;
+    S.layers.push({ id, name: "Layer " + id, modifiers: [] }); renderAll();
+  });
+  $("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : !matchMedia("(prefers-color-scheme: light)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem(STORE_KEY + "-theme", root.dataset.theme); } catch (e) { /* ignore */ }
+  });
+  try { const t = localStorage.getItem(STORE_KEY + "-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* ignore */ }
+  const dl1 = el("datalist", { id: "iconList" }), dl2 = el("datalist", { id: "akeyList" });
+  for (const k of ANDROID_KEYS) dl2.append(el("option", { value: k }));
+  document.body.append(dl1, dl2);
+}
+function setRes(w, h) {
+  // keep element sizes square in pixels when the aspect ratio changes
+  const oldR = S.res.w / S.res.h, newR = w / h;
+  for (const e of S.els) { e.h = round4(clamp(e.h * oldR / newR, 0.01, 1 - 0)); if (e.y + e.h > 1) e.y = round4(1 - e.h); }
+  S.res = { w, h }; $("resW").value = w; $("resH").value = h;
+  renderAll();
+}
+function renderAll() {
+  renderView(); renderLayers(); renderGamepad(); renderCanvas(); renderProps(); renderWarnings();
+  $("hideBuiltins").checked = S.hideBuiltins;
+}
+window.addEventListener("resize", renderCanvas);
+setupHeader();
+renderAll();
+</script>
+</body>
+</html>

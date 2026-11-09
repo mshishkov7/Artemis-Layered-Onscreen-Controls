@@ -20,6 +20,7 @@ import android.widget.Toast;
 import com.limelight.LimeLog;
 import com.limelight.R;
 import com.limelight.binding.input.ControllerHandler;
+import com.limelight.binding.input.virtual_controller.keyboard.LayerManager;
 import com.limelight.preferences.PreferenceConfiguration;
 
 import java.util.ArrayList;
@@ -106,6 +107,7 @@ public class VirtualController {
                 } else {
                     currentMode = ControllerMode.Active;
                     VirtualControllerConfigurationLoader.saveProfile(VirtualController.this, context);
+                    onLayersChanged();
                     message = context.getString(R.string.configuration_mode_exiting);
                 }
 
@@ -156,9 +158,41 @@ public class VirtualController {
     }
 
     public void showEnabledElements(){
+        boolean gate = currentMode == ControllerMode.Active;
         for(VirtualControllerElement element: elements){
-            element.setVisibility( element.enabled ? View.VISIBLE : View.GONE );
+            element.setVisibility( element.enabled && (!gate || LayerManager.get().isGamepadActive(element.elementId)) ? View.VISIBLE : View.GONE );
         }
+    }
+
+    // Layered layouts can assign the analog sticks to layers. Hide a stick whose layer is not
+    // active (letting go of it first), and show the shown ones again when its layer returns.
+    private void onLayersChanged() {
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (currentMode != ControllerMode.Active) {
+                    return;
+                }
+                for (VirtualControllerElement element : elements) {
+                    if (element.elementId != VirtualControllerElement.EID_LS
+                            && element.elementId != VirtualControllerElement.EID_RS) {
+                        continue;
+                    }
+                    if (LayerManager.get().isGamepadActive(element.elementId)) {
+                        if (buttonConfigure.getVisibility() == View.VISIBLE && element.enabled) {
+                            element.setVisibility(View.VISIBLE);
+                        }
+                    } else {
+                        if (element instanceof AnalogStick) {
+                            ((AnalogStick) element).releaseForLayerSwitch();
+                        } else if (element instanceof AnalogStickFree) {
+                            ((AnalogStickFree) element).releaseForLayerSwitch();
+                        }
+                        element.setVisibility(View.GONE);
+                    }
+                }
+            }
+        });
     }
 
     public void removeElements() {
@@ -211,6 +245,14 @@ public class VirtualController {
 
         // Apply user preferences onto the default layout
         VirtualControllerConfigurationLoader.loadFromPreferences(this, context);
+
+        LayerManager.get().setGamepadListener(new Runnable() {
+            @Override
+            public void run() {
+                onLayersChanged();
+            }
+        });
+        onLayersChanged();
     }
 
     public ControllerMode getControllerMode() {

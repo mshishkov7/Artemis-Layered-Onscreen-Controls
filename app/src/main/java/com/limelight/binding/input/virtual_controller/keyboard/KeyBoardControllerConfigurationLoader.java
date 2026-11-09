@@ -216,7 +216,7 @@ public class KeyBoardControllerConfigurationLoader {
         return button;
     }
 
-    private static KeyBoardDigitalButton createCustomButton(
+    static KeyBoardDigitalButton createCustomButton(
             String elementId,
             final short[] keys,
             final int layer,

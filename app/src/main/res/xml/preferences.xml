@@ -795,6 +795,18 @@
             android:title="@string/title_language_list" />
 
         <Preference
+            android:key="import_layered_layout"
+            android:summary="@string/summary_import_layered_layout"
+            android:title="@string/title_import_layered_layout"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="clear_layered_layout"
+            android:summary="@string/summary_clear_layered_layout"
+            android:title="@string/title_clear_layered_layout"
+            app:iconSpaceReserved="false" />
+
+        <Preference
             android:key="import_special_button_file"
             android:summary="@string/summary_import_special_button"
             android:title="@string/title_import_special_button"

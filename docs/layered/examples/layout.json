@@ -1,0 +1,37 @@
+{
+  "format": "artemis-layers",
+  "version": 1,
+  "hideBuiltins": true,
+  "layers": [
+    { "id": 0, "name": "Main" },
+    { "id": 1, "name": "Ctrl", "modifiers": ["CTRL"] },
+    { "id": 2, "name": "Alt",  "modifiers": ["ALT"] }
+  ],
+  "buttons": [
+    { "id": "sw_ctrl", "layer": "global", "x": 0.88, "y": 0.05, "w": 0.05, "h": 0.09, "name": "Ctrl",
+      "action": { "type": "layer", "mode": "hold", "target": 1 } },
+    { "id": "sw_alt",  "layer": "global", "x": 0.94, "y": 0.05, "w": 0.05, "h": 0.09, "name": "Alt",
+      "action": { "type": "layer", "mode": "hold", "target": 2 } },
+    { "id": "sw_next", "layer": "global", "x": 0.82, "y": 0.05, "w": 0.05, "h": 0.09, "name": ">",
+      "action": { "type": "layer", "mode": "next" } },
+
+    { "id": "m1", "layer": 0, "x": 0.70, "y": 0.60, "w": 0.06, "h": 0.11, "name": "1", "keys": ["1"] },
+    { "id": "m2", "layer": 0, "x": 0.77, "y": 0.60, "w": 0.06, "h": 0.11, "name": "2", "keys": ["2"] },
+    { "id": "m3", "layer": 0, "x": 0.84, "y": 0.60, "w": 0.06, "h": 0.11, "name": "3", "keys": ["3"] },
+    { "id": "m4", "layer": 0, "x": 0.91, "y": 0.60, "w": 0.06, "h": 0.11, "name": "4", "keys": ["4"] },
+
+    { "id": "c1", "layer": 1, "x": 0.70, "y": 0.60, "w": 0.06, "h": 0.11, "name": "C1", "keys": ["1"] },
+    { "id": "c2", "layer": 1, "x": 0.77, "y": 0.60, "w": 0.06, "h": 0.11, "name": "C2", "keys": ["2"] },
+    { "id": "c3", "layer": 1, "x": 0.84, "y": 0.60, "w": 0.06, "h": 0.11, "name": "C3", "keys": ["3"] },
+    { "id": "c4", "layer": 1, "x": 0.91, "y": 0.60, "w": 0.06, "h": 0.11, "name": "C4", "keys": ["4"] },
+
+    { "id": "a1", "layer": 2, "x": 0.70, "y": 0.60, "w": 0.06, "h": 0.11, "name": "A1", "keys": ["1"] },
+    { "id": "a2", "layer": 2, "x": 0.77, "y": 0.60, "w": 0.06, "h": 0.11, "name": "A2", "keys": ["2"] },
+
+    { "id": "shift", "layer": "global", "x": 0.60, "y": 0.75, "w": 0.06, "h": 0.11, "name": "Sh", "keys": ["SHIFT"], "sticky": true }
+  ],
+  "sticks": [
+    { "id": "move", "layer": "global", "x": 0.03, "y": 0.50, "w": 0.16, "h": 0.36,
+      "keys": { "up": "W", "down": "S", "left": "A", "right": "D", "middle": "SPACE" } }
+  ]
+}

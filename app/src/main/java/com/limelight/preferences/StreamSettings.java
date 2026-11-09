@@ -52,6 +52,7 @@ import com.limelight.LimeLog;
 import com.limelight.PcView;
 import com.limelight.R;
 import com.limelight.binding.input.virtual_controller.keyboard.KeyBoardControllerConfigurationLoader;
+import com.limelight.binding.input.virtual_controller.keyboard.LayeredLayoutStore;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
@@ -777,6 +778,32 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                 });
             }
 
+            _pref = findPreference("import_layered_layout");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("application/json");
+                        startActivityForResult(intent, READ_REQUEST_LAYERED_CODE);
+                        return false;
+                    }
+                });
+            }
+
+            _pref = findPreference("clear_layered_layout");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        LayeredLayoutStore.clear(requireActivity());
+                        Toast.makeText(getActivity(), getString(R.string.layered_layout_removed), Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                });
+            }
+
             _pref = findPreference("export_keyboard_file");
             if (_pref != null) {
                 _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
@@ -844,6 +871,7 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
 
         int READ_REQUEST_CODE = 1001;
         int READ_REQUEST_SPECIAL_CODE = 1002;
+        int READ_REQUEST_LAYERED_CODE = 1003;
 
         @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -871,6 +899,22 @@ public class StreamSettings extends AppCompatActivity implements SearchPreferenc
                 } catch (Exception e) {
                     e.printStackTrace();
                     Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+                return;
+            }
+
+            if (requestCode == READ_REQUEST_LAYERED_CODE && resultCode == Activity.RESULT_OK && data.getData() != null) {
+                try {
+                    String json = FileUriUtils.openUriForRead(getActivity(), data.getData());
+                    if (TextUtils.isEmpty(json)) {
+                        Toast.makeText(getActivity(), getString(R.string.pref_empty_file), Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    LayeredLayoutStore.importLayout(requireActivity(), json);
+                    Toast.makeText(getActivity(), getString(R.string.pref_import_success), Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), Toast.LENGTH_LONG).show();
                 }
                 return;
             }

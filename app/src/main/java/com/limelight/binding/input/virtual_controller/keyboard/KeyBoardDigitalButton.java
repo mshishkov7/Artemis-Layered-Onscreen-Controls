@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * This is a digital button on screen element. It is used to get click and double click user input.
  */
-public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
+public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement implements LayerReleasable {
 
     /**
      * Listener interface to update registered observers.
@@ -113,7 +113,8 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
 
     private void checkMovementForAllButtons(float x, float y) {
         for (keyBoardVirtualControllerElement element : virtualController.getElements()) {
-            if (element != this && element instanceof KeyBoardDigitalButton) {
+            if (element != this && element instanceof KeyBoardDigitalButton
+                    && !LayerManager.get().isHiddenByLayer(element)) {
                 ((KeyBoardDigitalButton) element).checkMovement(x, y, this);
             }
         }
@@ -122,6 +123,17 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement {
     public KeyBoardDigitalButton(KeyBoardController controller, String elementId, int layer, Context context) {
         super(controller, context, elementId);
         this.layer = layer;
+    }
+
+    @Override
+    public void releaseForLayerSwitch() {
+        if (!isPressed()) {
+            return;
+        }
+        setPressed(false);
+        movingButton = null;
+        onReleaseCallback();
+        invalidate();
     }
 
     public void addDigitalButtonListener(DigitalButtonListener listener) {

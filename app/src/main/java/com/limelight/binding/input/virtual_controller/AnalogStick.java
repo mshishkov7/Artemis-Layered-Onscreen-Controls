@@ -280,6 +280,18 @@ public class AnalogStick extends VirtualControllerElement {
         }
     }
 
+    /** Called by the layer system when this stick's layer is hidden: recenter and stop sending input. */
+    public void releaseForLayerSwitch() {
+        if (!isPressed()) {
+            return;
+        }
+        setPressed(false);
+        stick_state = STICK_STATE.NO_MOVEMENT;
+        notifyOnRevoke();
+        notifyOnMovement(0, 0);
+        invalidate();
+    }
+
     @Override
     public boolean onElementTouchEvent(MotionEvent event) {
         // save last click state

@@ -64,6 +64,7 @@ public class KeyBoardController {
         this.handler = new Handler(Looper.getMainLooper());
 
         this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+        LayerManager.get().reset(this);
 
         buttonConfigure = new Button(context);
         buttonConfigure.setAlpha(0.5f);
@@ -88,6 +89,7 @@ public class KeyBoardController {
                 } else {
                     currentMode = ControllerMode.Active;
                     KeyBoardControllerConfigurationLoader.saveProfile(KeyBoardController.this, context);
+                    showEnabledElements();
                     message = context.getString(R.string.configuration_mode_exiting);
                 }
 
@@ -135,8 +137,37 @@ public class KeyBoardController {
     }
 
     public void showEnabledElements() {
+        // Layers only gate visibility while playing; the config modes show every layer's elements
+        LayerManager layers = LayerManager.get();
+        boolean gate = currentMode == ControllerMode.Active;
         for (keyBoardVirtualControllerElement element : elements) {
-            element.setVisibility(element.enabled ? View.VISIBLE : View.GONE);
+            element.setVisibility(element.enabled && (!gate || layers.isActive(element)) ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /** Hides elements that are not on the active layer, without showing anything new. */
+    void applyLayerVisibility() {
+        if (currentMode != ControllerMode.Active) {
+            return;
+        }
+        LayerManager layers = LayerManager.get();
+        for (keyBoardVirtualControllerElement element : elements) {
+            if (!layers.isActive(element)) {
+                element.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    /** The active layer changed: let go of anything held on hidden layers, then update what's shown. */
+    void onLayerChanged() {
+        LayerManager layers = LayerManager.get();
+        for (keyBoardVirtualControllerElement element : elements) {
+            if (!layers.isActive(element) && element instanceof LayerReleasable) {
+                ((LayerReleasable) element).releaseForLayerSwitch();
+            }
+        }
+        if (shown && currentMode == ControllerMode.Active) {
+            showEnabledElements();
         }
     }
 
@@ -196,8 +227,13 @@ public class KeyBoardController {
         // Start with the default layout
         KeyBoardControllerConfigurationLoader.createDefaultLayout(this, context, conn);
 
+        // Add the imported layered layout, if any
+        org.json.JSONObject layered = LayeredLayoutLoader.addElements(this, context, conn);
+
         // Apply user preferences onto the default layout
         KeyBoardControllerConfigurationLoader.loadFromPreferences(this, context);
+
+        LayeredLayoutLoader.finish(this, context, layered);
     }
 
     public ControllerMode getControllerMode() {

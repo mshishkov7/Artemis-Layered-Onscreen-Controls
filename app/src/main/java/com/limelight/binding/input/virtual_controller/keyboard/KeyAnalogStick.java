@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * This is a analog stick on screen element. It is used to get 2-Axis user input.
  */
-public class KeyAnalogStick extends keyBoardVirtualControllerElement {
+public class KeyAnalogStick extends keyBoardVirtualControllerElement implements LayerReleasable {
 
     /**
      * outer radius size in percent of the ui element
@@ -280,6 +280,18 @@ public class KeyAnalogStick extends keyBoardVirtualControllerElement {
         if (stick_state == STICK_STATE.MOVED_ACTIVE) {
             notifyOnMovement(-correlated_x / complete, correlated_y / complete);
         }
+    }
+
+    @Override
+    public void releaseForLayerSwitch() {
+        if (!isPressed()) {
+            return;
+        }
+        setPressed(false);
+        stick_state = STICK_STATE.NO_MOVEMENT;
+        notifyOnRevoke();
+        notifyOnMovement(0, 0);
+        invalidate();
     }
 
     @Override

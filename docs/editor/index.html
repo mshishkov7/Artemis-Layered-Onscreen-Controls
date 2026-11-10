@@ -73,6 +73,8 @@
   .el .tag { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); font-size: 9px; color: var(--muted); pointer-events: none; white-space: nowrap; }
   .handle { position: absolute; right: 0; bottom: 0; width: 22%; height: 22%; min-width: 10px; min-height: 10px; max-width: 18px; max-height: 18px; background: var(--accent); cursor: nwse-resize; border-radius: 3px 0 0 0; opacity: .0; }
   .el.sel .handle { opacity: .9; }
+  #screen.multi .handle { display: none; }
+  #marq { position: absolute; border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); pointer-events: none; z-index: 9; }
   #hint { position: absolute; left: 14px; bottom: 8px; font-size: 12px; color: var(--muted); }
   @media (max-width: 1000px) {
     main { grid-template-columns: 1fr; grid-template-rows: auto minmax(260px, 1fr) auto; overflow-y: auto; }
@@ -196,7 +198,20 @@ function el(tag, attrs, ...kids) {
   return n;
 }
 function getEl(uid) { return S.els.find((e) => e.uid === uid); }
-function selEl() { return S.sel == null ? null : getEl(S.sel); }
+function selUids() {
+  if (S.sel == null || !getEl(S.sel)) return [];
+  let m = (S.multi || []).filter((u) => getEl(u));
+  if (!m.includes(S.sel)) m = [S.sel];
+  S.multi = m; return m;
+}
+function selEls() { return selUids().map(getEl); }
+function selEl() { const m = selUids(); return m.length === 1 ? getEl(m[0]) : null; }
+function setSel(uids) { S.multi = uids.slice(); S.sel = uids.length ? uids[uids.length - 1] : null; }
+// move every selected element by the same amount, keeping the whole group on screen
+function moveGroup(items, dx, dy) {
+  for (const it of items) { dx = Math.max(dx, -it.x); dx = Math.min(dx, 1 - it.w - it.x); dy = Math.max(dy, -it.y); dy = Math.min(dy, 1 - it.h - it.y); }
+  for (const it of items) { const e = getEl(it.uid); e.x = round4(it.x + dx); e.y = round4(it.y + dy); }
+}
 function layerName(id) { const l = S.layers.find((x) => x.id === id); return l ? l.name : "?" + id; }
 function nextId(prefix) {
   const used = new Set(S.els.map((e) => e.id));
@@ -263,10 +278,11 @@ function visibleInView(e) {
 function renderCanvas() {
   const scale = fitScreen();
   screenEl.classList.toggle("nogrid", !S.grid);
+  screenEl.classList.toggle("multi", selUids().length > 1);
   screenEl.textContent = "";
   for (const e of S.els) {
     if (!visibleInView(e)) continue;
-    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (e.uid === S.sel ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") });
+    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (selUids().includes(e.uid) ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") });
     n.dataset.uid = e.uid;
     n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%";
     n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%";
@@ -279,7 +295,7 @@ function renderCanvas() {
     const hd = el("div", { class: "handle" }); hd.dataset.handle = "1"; n.append(hd);
     screenEl.append(n);
   }
-  $("hint").textContent = S.sel == null ? "Click an element to edit · drag to move · corner to resize" : "Arrows nudge · Shift+arrows ×10 · Del removes · Ctrl+D duplicates";
+  $("hint").textContent = S.sel == null ? "Click an element to edit · drag on empty space to box-select · Shift/Ctrl+click adds to the selection" : selUids().length > 1 ? "Group: drag moves all · arrows nudge · Del removes · Ctrl+D duplicates" : "Arrows nudge · Shift+arrows ×10 · Del removes · Ctrl+D duplicates";
 }
 
 function renderLayers() {
@@ -375,6 +391,9 @@ function numInput(value, onInput) {
 }
 function renderProps() {
   const p = $("props"); p.textContent = "";
+  p._geo = null; p._updatePx = null;
+  const group = selEls();
+  if (group.length > 1) { renderGroupProps(p, group); return; }
   const e = selEl();
   if (!e) { p.append(el("div", { class: "muted" }, "Nothing selected. Add an element on the left, or click one on the canvas.")); return; }
   const kindLabel = { key: "Key button", switch: "Layer switch", stick: "Key stick" }[e.kind];
@@ -442,29 +461,92 @@ function renderProps() {
   const del = el("button", { class: "danger", onclick: removeSelected }, "Delete");
   p.append(el("div", { class: "row", style: "margin-top:8px" }, sq, dup, del));
 }
+function renderGroupProps(p, group) {
+  p.append(el("h2", {}, group.length + " elements selected"));
+  p.append(el("div", { class: "muted" }, "Changes apply to all of them. Shift/Ctrl+click or box-select to change the selection."));
+  const same = (k) => group.every((o) => o[k] === group[0][k]);
+  p.append(el("h2", {}, "Size (% of screen)"));
+  const row = el("div", { class: "row" });
+  for (const k of ["w", "h"]) {
+    const i = el("input", { type: "number", step: "0.1", value: same(k) ? String(Math.round(group[0][k] * 1000) / 10) : "", placeholder: "mixed" });
+    i.addEventListener("input", () => {
+      const v = parseFloat(i.value); if (isNaN(v)) return;
+      for (const o of group) o[k] = round4(clamp(v / 100, 0.01, 1 - (k === "w" ? o.x : o.y)));
+      renderCanvas(); save();
+    });
+    row.append(el("div", {}, el("label", {}, k.toUpperCase()), i));
+  }
+  p.append(row);
+  const sq = el("button", { onclick: () => { for (const o of group) o.h = round4(clamp(o.w * S.res.w / S.res.h, 0.01, 1 - o.y)); renderProps(); renderCanvas(); save(); } }, "Make all square");
+  const sw = el("button", { title: "Give every element the width and height of the first one you selected", onclick: () => { for (const o of group) { o.w = group[0].w; o.h = group[0].h; o.x = round4(Math.min(o.x, 1 - o.w)); o.y = round4(Math.min(o.y, 1 - o.h)); } renderProps(); renderCanvas(); save(); } }, "Match first");
+  p.append(el("div", { class: "row", style: "margin-top:6px" }, sq, sw));
+
+  p.append(el("h2", {}, "Align"));
+  const box = () => ({ l: Math.min(...group.map((o) => o.x)), r: Math.max(...group.map((o) => o.x + o.w)), t: Math.min(...group.map((o) => o.y)), b: Math.max(...group.map((o) => o.y + o.h)) });
+  const act = (label, fn, title) => el("button", { title, onclick: () => { fn(box()); renderCanvas(); renderProps(); save(); } }, label);
+  const dist = (axis) => () => {
+    if (group.length < 3) return;
+    const pos = axis === "x" ? "x" : "y", len = axis === "x" ? "w" : "h";
+    const sorted = group.slice().sort((a, b) => a[pos] - b[pos]);
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    const span = last[pos] + last[len] - first[pos];
+    const total = sorted.reduce((a, o) => a + o[len], 0);
+    const gap = (span - total) / (sorted.length - 1);
+    let cur = first[pos];
+    for (const o of sorted) { o[pos] = round4(cur); cur += o[len] + gap; }
+  };
+  p.append(el("div", { class: "row", style: "flex-wrap:wrap" },
+    act("Left", (b) => group.forEach((o) => (o.x = round4(b.l)))),
+    act("Right", (b) => group.forEach((o) => (o.x = round4(b.r - o.w)))),
+    act("Top", (b) => group.forEach((o) => (o.y = round4(b.t)))),
+    act("Bottom", (b) => group.forEach((o) => (o.y = round4(b.b - o.h)))),
+    act("Center ↔", (b) => group.forEach((o) => (o.x = round4((b.l + b.r) / 2 - o.w / 2)))),
+    act("Center ↕", (b) => group.forEach((o) => (o.y = round4((b.t + b.b) / 2 - o.h / 2)))),
+    act("Spread ↔", dist("x"), "Even gaps between 3 or more elements, left to right"),
+    act("Spread ↕", dist("y"), "Even gaps between 3 or more elements, top to bottom")));
+
+  p.append(el("h2", {}, "Layers (applies to all)"));
+  p.append(layerPicker(group[0].layers, (v) => { for (const o of group) o.layers = v === "global" ? "global" : v.slice(); save(); }, true));
+
+  const dup = el("button", { onclick: duplicate }, "Duplicate");
+  const del = el("button", { class: "danger", onclick: removeSelected }, "Delete");
+  p.append(el("h2", {}, "Actions"));
+  if (S.layers.length > 1) {
+    const cl = el("select", { title: "Copy all selected elements to another layer at the same positions" }, el("option", { value: "" }, "Clone all to layer…"));
+    for (const l of S.layers) cl.append(el("option", { value: String(l.id) }, l.id + " " + l.name));
+    cl.addEventListener("change", () => { if (cl.value !== "") cloneToLayer(Number(cl.value)); });
+    p.append(el("div", { style: "margin-bottom:8px" }, cl));
+  }
+  p.append(el("div", { class: "row" }, dup, del));
+}
 function syncGeo() {
   const p = $("props"), e = selEl(); if (!e || !p._geo) return;
   for (const k of ["x", "y", "w", "h"]) p._geo[k].value = String(Math.round(e[k] * 1000) / 10);
   if (p._updatePx) p._updatePx();
 }
 
-function duplicate() {
-  const e = selEl(); if (!e) return;
+function copyOf(e) {
   const c = JSON.parse(JSON.stringify(e));
   c.uid = ++S.counter; c.id = nextId(e.kind === "key" ? "b" : e.kind === "switch" ? "sw" : "stick");
-  c.x = clamp(e.x + 0.02, 0, 1 - e.w); c.y = clamp(e.y + 0.03, 0, 1 - e.h);
-  S.els.push(c); S.sel = c.uid; renderAll();
+  return c;
+}
+function duplicate() {
+  const copies = [];
+  for (const e of selEls()) {
+    const c = copyOf(e);
+    c.x = clamp(e.x + 0.02, 0, 1 - e.w); c.y = clamp(e.y + 0.03, 0, 1 - e.h);
+    S.els.push(c); copies.push(c.uid);
+  }
+  if (copies.length) { setSel(copies); renderAll(); }
 }
 function cloneToLayer(layerId) {
-  const e = selEl(); if (!e) return;
-  const c = JSON.parse(JSON.stringify(e));
-  c.uid = ++S.counter; c.id = nextId(e.kind === "key" ? "b" : e.kind === "switch" ? "sw" : "stick");
-  c.layers = [layerId];
-  S.els.push(c); S.sel = c.uid; S.view = String(layerId); renderAll();
+  const copies = [];
+  for (const e of selEls()) { const c = copyOf(e); c.layers = [layerId]; S.els.push(c); copies.push(c.uid); }
+  if (copies.length) { setSel(copies); S.view = String(layerId); renderAll(); }
 }
 function removeSelected() {
-  if (S.sel == null) return;
-  S.els = S.els.filter((e) => e.uid !== S.sel); S.sel = null; renderAll();
+  const ids = new Set(selUids()); if (!ids.size) return;
+  S.els = S.els.filter((e) => !ids.has(e.uid)); setSel([]); renderAll();
 }
 
 /* ---------- validation ---------- */
@@ -646,19 +728,44 @@ $("iconsInput").addEventListener("change", (ev) => {
 /* ---------- interaction ---------- */
 let drag = null;
 screenEl.addEventListener("pointerdown", (ev) => {
-  const t = ev.target.closest(".el");
-  if (!t) { if (S.sel != null) { S.sel = null; renderAll(); } return; }
-  const e = getEl(Number(t.dataset.uid)); if (!e) return;
-  const wasSel = S.sel === e.uid;
-  S.sel = e.uid;
   const rect = screenEl.getBoundingClientRect();
-  drag = { uid: e.uid, resize: !!ev.target.dataset.handle, sx: ev.clientX, sy: ev.clientY, x: e.x, y: e.y, w: e.w, h: e.h, rect };
+  const add = ev.shiftKey || ev.ctrlKey || ev.metaKey;
+  const t = ev.target.closest(".el");
+  if (!t) {
+    drag = { marquee: true, sx: ev.clientX, sy: ev.clientY, rect, add, base: add ? selUids().slice() : [], moved: false };
+    screenEl.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
+  }
+  const e = getEl(Number(t.dataset.uid)); if (!e) return;
+  if (add) {
+    let m = selUids().slice();
+    if (m.includes(e.uid)) m = m.filter((u) => u !== e.uid); else m.push(e.uid);
+    setSel(m); renderCanvas(); renderProps(); ev.preventDefault(); return;
+  }
+  const wasSel = selUids().includes(e.uid);
+  if (!wasSel) setSel([e.uid]); else S.sel = e.uid;
+  const items = selEls().map((o) => ({ uid: o.uid, x: o.x, y: o.y, w: o.w, h: o.h }));
+  drag = { uid: e.uid, items, resize: items.length === 1 && !!ev.target.dataset.handle, sx: ev.clientX, sy: ev.clientY, x: e.x, y: e.y, w: e.w, h: e.h, rect };
   screenEl.setPointerCapture(ev.pointerId);
   if (!wasSel) { renderCanvas(); renderProps(); }
   ev.preventDefault();
 });
 screenEl.addEventListener("pointermove", (ev) => {
   if (!drag) return;
+  if (drag.marquee) {
+    const r = drag.rect;
+    if (!drag.moved && Math.abs(ev.clientX - drag.sx) + Math.abs(ev.clientY - drag.sy) < 4) return;
+    drag.moved = true;
+    const x1 = clamp((Math.min(ev.clientX, drag.sx) - r.left) / r.width, 0, 1), x2 = clamp((Math.max(ev.clientX, drag.sx) - r.left) / r.width, 0, 1);
+    const y1 = clamp((Math.min(ev.clientY, drag.sy) - r.top) / r.height, 0, 1), y2 = clamp((Math.max(ev.clientY, drag.sy) - r.top) / r.height, 0, 1);
+    let mq = $("marq");
+    if (!mq) { mq = el("div", { id: "marq" }); screenEl.append(mq); }
+    mq.style.left = x1 * 100 + "%"; mq.style.top = y1 * 100 + "%"; mq.style.width = (x2 - x1) * 100 + "%"; mq.style.height = (y2 - y1) * 100 + "%";
+    const hits = S.els.filter((e) => visibleInView(e) && e.x < x2 && e.x + e.w > x1 && e.y < y2 && e.y + e.h > y1).map((e) => e.uid);
+    const m = drag.base.concat(hits.filter((u) => !drag.base.includes(u)));
+    S.multi = m; S.sel = m.length ? m[m.length - 1] : null;
+    for (const n of screenEl.querySelectorAll(".el")) n.classList.toggle("sel", m.includes(Number(n.dataset.uid)));
+    return;
+  }
   const e = getEl(drag.uid); if (!e) return;
   const dx = (ev.clientX - drag.sx) / drag.rect.width, dy = (ev.clientY - drag.sy) / drag.rect.height;
   if (drag.resize) {
@@ -668,26 +775,39 @@ screenEl.addEventListener("pointermove", (ev) => {
     if (!ev.altKey) { const hh = w * S.res.w / S.res.h; if (hh <= 1 - e.y) h = hh; else { h = 1 - e.y; w = h * S.res.h / S.res.w; } }
     e.w = round4(w); e.h = round4(h);
   } else {
-    e.x = round4(clamp(snapv(drag.x + dx), 0, 1 - e.w));
-    e.y = round4(clamp(snapv(drag.y + dy), 0, 1 - e.h));
+    moveGroup(drag.items, snapv(drag.x + dx) - drag.x, snapv(drag.y + dy) - drag.y);
   }
-  const n = screenEl.querySelector('.el[data-uid="' + e.uid + '"]');
-  if (n) { n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%"; n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%"; }
+  for (const it of drag.items) {
+    const o = getEl(it.uid), n = screenEl.querySelector('.el[data-uid="' + it.uid + '"]');
+    if (n) { n.style.left = o.x * 100 + "%"; n.style.top = o.y * 100 + "%"; n.style.width = o.w * 100 + "%"; n.style.height = o.h * 100 + "%"; }
+  }
   syncGeo();
 });
-function endDrag() { if (drag) { drag = null; save(); renderCanvas(); } }
+function endDrag() {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.marquee) {
+    if (!d.moved && !d.add) setSel([]);
+    renderAll(); return;
+  }
+  save(); renderCanvas();
+}
 screenEl.addEventListener("pointerup", endDrag);
 screenEl.addEventListener("pointercancel", endDrag);
 document.addEventListener("keydown", (ev) => {
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   if (/INPUT|SELECT|TEXTAREA/.test(tag)) return;
-  const e = selEl(); if (!e) return;
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "a") {
+    setSel(S.els.filter(visibleInView).map((e) => e.uid)); renderCanvas(); renderProps(); ev.preventDefault(); return;
+  }
+  const all = selEls(); if (!all.length) return;
   const step = (S.snap > 0 ? S.snap : 0.001) * (ev.shiftKey ? 10 : 1);
+  const items = all.map((o) => ({ uid: o.uid, x: o.x, y: o.y, w: o.w, h: o.h }));
   let moved = true;
-  if (ev.key === "ArrowLeft") e.x = round4(clamp(e.x - step, 0, 1 - e.w));
-  else if (ev.key === "ArrowRight") e.x = round4(clamp(e.x + step, 0, 1 - e.w));
-  else if (ev.key === "ArrowUp") e.y = round4(clamp(e.y - step, 0, 1 - e.h));
-  else if (ev.key === "ArrowDown") e.y = round4(clamp(e.y + step, 0, 1 - e.h));
+  if (ev.key === "ArrowLeft") moveGroup(items, -step, 0);
+  else if (ev.key === "ArrowRight") moveGroup(items, step, 0);
+  else if (ev.key === "ArrowUp") moveGroup(items, 0, -step);
+  else if (ev.key === "ArrowDown") moveGroup(items, 0, step);
   else if (ev.key === "Delete" || ev.key === "Backspace") { removeSelected(); ev.preventDefault(); return; }
   else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "d") { duplicate(); ev.preventDefault(); return; }
   else moved = false;

@@ -51,6 +51,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
     private String text = "";
     private int icon = -1;
     private String iconFile = null;
+    private String[] pieIcons = null;      // 2-4 icons shown as slices, slice 0 centred at the top, clockwise
     private Boolean squareShape = null;   // null = follow the app's keyboard-square setting
     private float iconScale = 1f, iconDx = 0f, iconDy = 0f;
     private long timerLongClickTimeout = 300;
@@ -161,6 +162,12 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         invalidate();
     }
 
+    /** Icons shown as pie slices (2-4 entries, null/empty entries leave a slice blank). */
+    public void setPieIcons(String[] names) {
+        this.pieIcons = (names != null && names.length >= 2 && names.length <= 4) ? names : null;
+        invalidate();
+    }
+
     /** Per-button shape from a layered layout: true square, false round, null = app setting. */
     public void setSquareShape(Boolean square) {
         this.squareShape = square;
@@ -211,7 +218,10 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         }
 
         Bitmap fileIcon = null;
-        if (iconFile != null) {
+        boolean pieDrawn = false;
+        if (pieIcons != null) {
+            pieDrawn = drawPie(canvas, square, shouldSetPressed);
+        } else if (iconFile != null) {
             int inset = Math.max((int) paint.getStrokeWidth() * 2, getWidth() / 12);
             fileIcon = IconCache.get(getContext(), iconFile,
                     Math.round((getWidth() - 2 * inset) * iconScale), Math.round((getHeight() - 2 * inset) * iconScale));
@@ -230,7 +240,7 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
             }
         }
 
-        if (fileIcon != null) {
+        if (fileIcon != null || pieDrawn) {
             // icon drawn above
         } else if (icon != -1) {
             Drawable d = getResources().getDrawable(icon);
@@ -241,6 +251,59 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
             paint.setStrokeWidth(getDefaultStrokeWidth()/2);
             canvas.drawText(text, getPercent(getWidth(), 50), getPercent(getHeight(), 63), paint);
         }
+    }
+
+    /** Draws the pie icons; returns true if at least one icon could be drawn. */
+    private boolean drawPie(Canvas canvas, boolean square, boolean pressed) {
+        final int n = pieIcons.length;
+        final float w = getWidth(), h = getHeight(), cx = w / 2f, cy = h / 2f;
+        final float far = 2f * Math.max(w, h);
+        final float sweep = 360f / n;
+        final float first = -90f - sweep / 2f;     // slice 0 is centred at the top
+
+        Path shapeClip = new Path();
+        if (square) shapeClip.addRect(rect, Path.Direction.CW); else shapeClip.addOval(rect, Path.Direction.CW);
+
+        Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        bitmapPaint.setAlpha(pressed ? 160 : 255);
+        int boxW = Math.max(1, Math.round(w * 0.55f * iconScale)), boxH = Math.max(1, Math.round(h * 0.55f * iconScale));
+        boolean any = false;
+
+        for (int i = 0; i < n; i++) {
+            String name = pieIcons[i];
+            if (name == null || name.isEmpty()) continue;
+            Bitmap bmp = IconCache.get(getContext(), name, boxW, boxH);
+            if (bmp == null) continue;
+            any = true;
+            double a0 = Math.toRadians(first + i * sweep), a1 = Math.toRadians(first + (i + 0.5f) * sweep), a2 = Math.toRadians(first + (i + 1) * sweep);
+            Path wedge = new Path();
+            wedge.moveTo(cx, cy);
+            wedge.lineTo(cx + far * (float) Math.cos(a0), cy + far * (float) Math.sin(a0));
+            wedge.lineTo(cx + far * (float) Math.cos(a1), cy + far * (float) Math.sin(a1));
+            wedge.lineTo(cx + far * (float) Math.cos(a2), cy + far * (float) Math.sin(a2));
+            wedge.close();
+            canvas.save();
+            canvas.clipPath(shapeClip);
+            canvas.clipPath(wedge);
+            float mx = cx + 0.27f * w * (float) Math.cos(a1) + iconDx * w;
+            float my = cy + 0.27f * h * (float) Math.sin(a1) + iconDy * h;
+            canvas.drawBitmap(bmp, mx - bmp.getWidth() / 2f, my - bmp.getHeight() / 2f, bitmapPaint);
+            canvas.restore();
+        }
+
+        if (any) {
+            Paint line = new Paint(paint);
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeWidth(Math.max(1f, getDefaultStrokeWidth() / 2f));
+            canvas.save();
+            canvas.clipPath(shapeClip);
+            for (int i = 0; i < n; i++) {
+                double a = Math.toRadians(first + i * sweep);
+                canvas.drawLine(cx, cy, cx + far * (float) Math.cos(a), cy + far * (float) Math.sin(a), line);
+            }
+            canvas.restore();
+        }
+        return any;
     }
 
     private void onClickCallback() {

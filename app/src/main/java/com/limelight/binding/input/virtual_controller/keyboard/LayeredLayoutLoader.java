@@ -180,8 +180,22 @@ public final class LayeredLayoutLoader {
                     elementId, vk, 1, name, -1, b.optBoolean("sticky", false), controller, conn, context);
         }
 
+        JSONArray pie = b.optJSONArray("icons");
         String icon = b.optString("icon", "");
-        if (!icon.isEmpty()) {
+        if (pie != null && pie.length() >= 2 && pie.length() <= 4) {
+            String[] names = new String[pie.length()];
+            for (int k = 0; k < names.length; k++) {
+                String nm = pie.optString(k, "");
+                if (LayeredLayoutStore.isPlainFileName(nm)) {
+                    names[k] = nm;
+                } else if (!nm.isEmpty()) {
+                    LimeLog.warning("Layered layout: ignoring pie icon \"" + nm + "\" (must be a plain file name)");
+                }
+            }
+            button.setPieIcons(names);
+            button.setIconAdjust((float) b.optDouble("iconScale", 1.0),
+                    (float) b.optDouble("iconDx", 0.0), (float) b.optDouble("iconDy", 0.0));
+        } else if (!icon.isEmpty()) {
             if (LayeredLayoutStore.isPlainFileName(icon)) {
                 button.setIconFile(icon);
                 button.setIconAdjust((float) b.optDouble("iconScale", 1.0),

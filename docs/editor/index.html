@@ -65,6 +65,8 @@
   .el.switch { border-style: dashed; }
   .el.stick { border-radius: 50%; }
   .el.stick::after { content: ""; position: absolute; width: 36%; height: 36%; border: 2px solid var(--btn); border-radius: 50%; }
+  .el .wedge { position: absolute; inset: 0; pointer-events: none; }
+  .el .pieline { position: absolute; left: 50%; top: 50%; height: 0; border-top: 1px solid var(--btn); transform-origin: 0 0; pointer-events: none; }
   .el.sq { border-radius: 0 !important; }
   .el.sticky { background: color-mix(in srgb, var(--accent) 22%, transparent); }
   .el.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 5; }
@@ -297,6 +299,30 @@ function visibleInView(e) {
   if (S.view === "all") return true;
   return onLayer(e, Number(S.view));
 }
+/* pie icons: slice 0 is centred at the top, going clockwise (same maths as the app, in pixels) */
+function renderPie(n, e, scale) {
+  const W = e.w * S.res.w * scale, H = e.h * S.res.h * scale, N = e.icons.length;
+  const R = 2 * Math.max(W, H), sweep = 360 / N, first = -90 - sweep / 2, rad = (d) => d * Math.PI / 180;
+  const pt = (a) => (50 + R * Math.cos(rad(a)) / W * 100) + "% " + (50 + R * Math.sin(rad(a)) / H * 100) + "%";
+  const sc = e.iconScale || 1;
+  for (let i = 0; i < N; i++) {
+    const name = e.icons[i], ic = name && icons[name]; if (!ic) continue;
+    const a0 = first + i * sweep, a1 = first + (i + 0.5) * sweep, a2 = first + (i + 1) * sweep;
+    const wedge = el("div", { class: "wedge" });
+    wedge.style.clipPath = "polygon(50% 50%, " + pt(a0) + ", " + pt(a1) + ", " + pt(a2) + ")";
+    const im = el("img", { src: ic.url, alt: "" });
+    im.style.inset = "auto"; im.style.maxWidth = "none"; im.style.transform = "translate(-50%,-50%)";
+    im.style.width = 55 * sc + "%"; im.style.height = 55 * sc + "%";
+    im.style.left = 50 + 27 * Math.cos(rad(a1)) + (e.iconDx || 0) * 100 + "%";
+    im.style.top = 50 + 27 * Math.sin(rad(a1)) + (e.iconDy || 0) * 100 + "%";
+    wedge.append(im); n.append(wedge);
+  }
+  for (let i = 0; i < N; i++) {
+    const ln = el("div", { class: "pieline" });
+    ln.style.width = R + "px"; ln.style.transform = "rotate(" + (first + i * sweep) + "deg)";
+    n.append(ln);
+  }
+}
 function renderCanvas() {
   const scale = fitScreen();
   screenEl.classList.toggle("nogrid", !S.grid);
@@ -309,8 +335,9 @@ function renderCanvas() {
     n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%";
     n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%";
     const pxH = e.h * S.res.h * scale;
-    const ic = e.icon && icons[e.icon];
-    if (ic) {
+    const ic = !(e.icons && e.icons.length) && e.icon && icons[e.icon];
+    if (e.icons && e.icons.length >= 2 && e.kind !== "stick") renderPie(n, e, scale);
+    else if (ic) {
       const im = el("img", { src: ic.url, alt: "" });
       const sc = e.iconScale || 1;
       im.style.inset = "auto"; im.style.width = 84 * sc + "%"; im.style.height = 84 * sc + "%";
@@ -424,13 +451,16 @@ function iconThumb(cls, name) {
   if (ic) ph.append(el("img", { src: ic.url, alt: "" })); else ph.append(name ? "?" : "–");
   return ph;
 }
-function openIconPicker(targets) {
-  const cur = targets[0].icon || "";
+function openIconPicker(targets, slot) {
+  const cur = (slot == null ? targets[0].icon : (targets[0].icons || [])[slot]) || "";
   let chosen = cur;
   const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey, true); };
   const onKey = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); close(); } };
   const apply = (name) => {
-    for (const t of targets) t.icon = name;
+    for (const t of targets) {
+      if (slot == null) t.icon = name;
+      else { t.icons = t.icons || []; while (t.icons.length <= slot) t.icons.push(""); t.icons[slot] = name; }
+    }
     close(); renderProps(); renderCanvas(); renderWarnings(); save();
   };
   const grid = el("div", { class: "grid" });
@@ -483,6 +513,26 @@ function iconControl(targets) {
   wrap.append(row);
   return wrap;
 }
+function pieControl(e) {
+  const wrap = el("div", {});
+  const n = e.icons ? e.icons.length : 0;
+  const sel = el("select", {}, el("option", { value: "0" }, "Off (single icon)"), el("option", { value: "2" }, "2 slices"), el("option", { value: "3" }, "3 slices"), el("option", { value: "4" }, "4 slices"));
+  sel.value = String(n);
+  sel.addEventListener("change", () => {
+    const k = parseInt(sel.value, 10);
+    if (!k) e.icons = []; else { e.icons = (e.icons || []).slice(0, k); while (e.icons.length < k) e.icons.push(""); }
+    renderProps(); renderCanvas(); renderWarnings(); save();
+  });
+  wrap.append(field("Pie icons (one per ability, clockwise from the top)", sel));
+  for (let i = 0; i < n; i++) {
+    const row = el("div", { class: "iconrow" }, iconThumb("ph", e.icons[i]), el("span", { class: "muted" }, "Slice " + (i + 1)),
+      el("button", { onclick: () => openIconPicker([e], i) }, "Choose…"));
+    if (e.icons[i]) row.append(el("button", { onclick: () => { e.icons[i] = ""; renderProps(); renderCanvas(); renderWarnings(); save(); } }, "Clear"));
+    wrap.append(row);
+  }
+  return wrap;
+}
+function hasIcon(t) { return !!(t.icon || (t.icons && t.icons.some(Boolean))); }
 function styleControls(targets) {
   const wrap = el("div", {});
   const t0 = targets[0];
@@ -490,7 +540,7 @@ function styleControls(targets) {
   shape.value = t0.shape || "";
   shape.addEventListener("change", () => { for (const t of targets) t.shape = shape.value; renderCanvas(); save(); });
   wrap.append(field("Shape", shape));
-  if (!targets.some((t) => t.icon)) { wrap.append(el("div", { class: "muted" }, "Pick an icon to get zoom and offset (the part outside the button is cut off).")); return wrap; }
+  if (!targets.some(hasIcon)) { wrap.append(el("div", { class: "muted" }, "Pick an icon to get zoom and offset (the part outside the button is cut off).")); return wrap; }
   const sl = (label, key, min, max, step, def, fmt) => {
     const out = el("span", { class: "muted" }, fmt(t0[key] != null ? t0[key] : def));
     const r = el("input", { type: "range", min, max, step, value: String(t0[key] != null ? t0[key] : def) });
@@ -539,9 +589,12 @@ function renderProps() {
   }
   if (e.kind !== "stick") {
     p.append(el("h2", {}, "Icon"));
-    p.append(iconControl([e]));
+    p.append(pieControl(e));
+    if (!(e.icons && e.icons.length)) {
+      p.append(iconControl([e]));
+      p.append(field("Icon file name (or type it)", textInput(e.icon, (v, i) => { e.icon = v.trim(); renderCanvas(); renderWarnings(); }, { list: "iconList" })));
+    }
     p.append(styleControls([e]));
-    p.append(field("Icon file name (or type it)", textInput(e.icon, (v, i) => { e.icon = v.trim(); renderCanvas(); renderWarnings(); }, { list: "iconList" })));
   } else {
     for (const dir of ["up", "down", "left", "right", "middle"]) {
       p.append(field("Key " + dir + (dir === "middle" ? " (double-tap, optional)" : ""), textInput(e.stick[dir] || "", (v, i) => {
@@ -623,7 +676,7 @@ function renderGroupProps(p, group) {
     act("Spread ↔", dist("x"), "Even gaps between 3 or more elements, left to right"),
     act("Spread ↕", dist("y"), "Even gaps between 3 or more elements, top to bottom")));
 
-  const iconable = group.filter((o) => o.kind !== "stick");
+  const iconable = group.filter((o) => o.kind !== "stick" && !(o.icons && o.icons.length));
   if (iconable.length) { p.append(el("h2", {}, "Icon & shape (applies to " + iconable.length + " buttons)")); p.append(iconControl(iconable)); p.append(styleControls(iconable)); }
 
   p.append(el("h2", {}, "Layers (applies to all)"));
@@ -691,7 +744,13 @@ function validate() {
       for (const d of ["up", "down", "left", "right"]) if (!e.stick[d]) out.push(who + ": stick has no " + d + " key.");
       for (const d in e.stick) if (!validAndroidKey(e.stick[d])) out.push(who + ": unknown stick key \"" + e.stick[d] + "\".");
     }
-    if (e.icon) {
+    for (const pi of (e.icons || [])) {
+      if (!pi) continue;
+      if (/[\\/]/.test(pi)) out.push(who + ": pie icon must be a plain file name.");
+      else if (iconNames.length && !icons[pi]) out.push(who + ': pie icon "' + pi + '" not in the folder.');
+    }
+    if (e.icons && e.icons.length && !e.icons.some(Boolean)) out.push(who + ": pie icons are on but no slice has an icon.");
+    if (e.icon && !(e.icons && e.icons.length)) {
       if (/[\\/]/.test(e.icon)) out.push(who + ": icon must be a plain file name.");
       else if (iconNames.length && !icons[e.icon]) {
         const alt = iconNames.find((n) => n.toLowerCase() === e.icon.toLowerCase());
@@ -725,7 +784,12 @@ function buildLayout() {
       continue;
     }
     const b = Object.assign({ id: e.id, layer: layerValue(e.layers) }, geo, { name: e.name });
-    if (e.icon) {
+    if (e.icons && e.icons.length >= 2) {
+      b.icons = e.icons.map((x) => (x ? pngName(x) : ""));
+      if (e.iconScale && e.iconScale !== 1) b.iconScale = round4(e.iconScale);
+      if (e.iconDx) b.iconDx = round4(e.iconDx);
+      if (e.iconDy) b.iconDy = round4(e.iconDy);
+    } else if (e.icon) {
       b.icon = pngName(e.icon);
       if (e.iconScale && e.iconScale !== 1) b.iconScale = round4(e.iconScale);
       if (e.iconDx) b.iconDx = round4(e.iconDx);
@@ -764,6 +828,7 @@ function importLayout(L) {
   n.layers = (L.layers && L.layers.length ? L.layers : [{ id: 0, name: "Main" }]).map((l) => ({ id: l.id, name: l.name || "Layer " + l.id, modifiers: (l.modifiers || []).map(String) }));
   for (const b of L.buttons || []) {
     const e = { uid: ++n.counter, id: String(b.id), layers: parseLayerSpec(b.layer), x: +b.x || 0, y: +b.y || 0, w: +b.w || 0.05, h: +b.h || 0.05, name: b.name || "", icon: b.icon || "" };
+    if (Array.isArray(b.icons) && b.icons.length >= 2) e.icons = b.icons.slice(0, 4).map(String);
     if (b.shape === "round" || b.shape === "square") e.shape = b.shape;
     if (b.iconScale) e.iconScale = +b.iconScale; if (b.iconDx) e.iconDx = +b.iconDx; if (b.iconDy) e.iconDy = +b.iconDy;
     if (b.action && b.action.type === "layer") { e.kind = "switch"; e.mode = b.action.mode || "hold"; e.target = b.action.target != null ? b.action.target : n.layers[0].id; }
@@ -829,7 +894,11 @@ $("exportZip").addEventListener("click", async () => {
   if (!confirmProblems()) return;
   const layout = buildLayout();
   const files = [{ name: "layout.json", data: new TextEncoder().encode(JSON.stringify(layout, null, 2)) }];
-  const used = new Set(S.els.map((e) => e.icon && pngName(e.icon)).filter((n) => n && !/[\\/]/.test(n)));
+  const used = new Set();
+  for (const e of S.els) {
+    const names = e.icons && e.icons.length >= 2 ? e.icons : [e.icon];
+    for (const x of names) if (x && !/[\\/]/.test(x)) used.add(pngName(x));
+  }
   const missing = [];
   for (const name of used) {
     if (icons[name]) files.push({ name: "icons/" + name, data: new Uint8Array(await icons[name].file.arrayBuffer()) }); else missing.push(name);

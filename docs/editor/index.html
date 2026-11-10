@@ -67,6 +67,7 @@
   .el.stick::after { content: ""; position: absolute; width: 36%; height: 36%; border: 2px solid var(--btn); border-radius: 50%; }
   .el .wedge { position: absolute; inset: 0; pointer-events: none; }
   .el .pieline { position: absolute; left: 50%; top: 50%; height: 0; border-top: 1px solid var(--btn); transform-origin: 0 0; pointer-events: none; }
+  #screen .bg { position: absolute; inset: 0; background-position: center; background-repeat: no-repeat; pointer-events: none; }
   .el.sq { border-radius: 0 !important; }
   .el.sticky { background: color-mix(in srgb, var(--accent) 22%, transparent); }
   .el.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 5; }
@@ -144,6 +145,17 @@
     <div class="muted">Gamepad analog sticks (the app's own overlay)</div>
     <div id="gamepadBox"></div>
 
+    <h2>Preview</h2>
+    <div class="row"><label class="btn">Background image…<input type="file" id="bgInput" accept="image/*" hidden></label><button id="bgClear">Remove</button></div>
+    <div class="muted">A game screenshot behind the buttons (not saved or exported).</div>
+    <div style="margin-top:6px"><label>Background opacity <span class="muted" id="bgOpVal"></span></label><input type="range" id="bgOpacity" min="0.05" max="1" step="0.05"></div>
+    <div style="margin-top:6px"><label for="bgFit">Background fit</label>
+      <select id="bgFit"><option value="cover">Cover (crop)</option><option value="100% 100%">Stretch</option><option value="contain">Contain</option></select></div>
+    <label class="check" style="margin-top:8px"><input type="checkbox" id="realSize"> Real size (as on the phone)</label>
+    <div class="row" style="margin-top:4px"><div><label for="diag">Phone screen diagonal (in)</label><input type="number" id="diag" min="3" max="20" step="0.1"></div></div>
+    <div class="row" style="margin-top:6px"><button id="calib">Calibrate my monitor…</button></div>
+    <div class="muted" id="realInfo"></div>
+
     <h2>Icons</h2>
     <div class="muted" id="iconStatus">No icons folder chosen. Icons still export by name; pick the folder to preview them and to bundle them in the .zip.</div>
 
@@ -159,13 +171,13 @@
 
 /* ---------- constants ---------- */
 const PRESETS = [
-  ["Samsung S25 Ultra (3120×1440)", 3120, 1440],
-  ["Pixel 9 Pro (2992×1344)", 2992, 1344],
+  ["Samsung S25 Ultra (3120×1440)", 3120, 1440, 6.9],
+  ["Pixel 9 Pro (2992×1344)", 2992, 1344, 6.3],
   ["QHD 16:9 (2560×1440)", 2560, 1440],
   ["20:9 (2400×1080)", 2400, 1080],
   ["19.5:9 (2340×1080)", 2340, 1080],
   ["FHD 16:9 (1920×1080)", 1920, 1080],
-  ["Tablet 16:10 (2560×1600)", 2560, 1600],
+  ["Tablet 16:10 (2560×1600)", 2560, 1600, 11],
 ];
 const STORE_KEY = "layered-layout-editor-v1";
 const KEY_GROUPS = {
@@ -188,12 +200,14 @@ function fresh() {
     els: [],
     hideBuiltins: true,
     shape: "",
+    diag: 6.9, real: false, bgOpacity: 0.6, bgFit: "cover",
     gamepad: { left: null, right: null },
     builtins: null,
     snap: 0.005, grid: true, view: "all", sel: null, counter: 0,
   };
 }
 let S = load() || fresh();
+let bgUrl = "";
 let icons = {};               // file name -> { url, file }
 let iconNames = [];
 
@@ -285,7 +299,27 @@ function addElement(kind) {
 
 /* ---------- rendering ---------- */
 const screenEl = $("screen");
+const CAL_KEY = STORE_KEY + "-physPerMm";
+function cssPxPerMm() {
+  let v = 0; try { v = parseFloat(localStorage.getItem(CAL_KEY)); } catch (e) { /* ignore */ }
+  if (!(v > 0)) return 96 / 25.4;                       // default: 96 css px per inch
+  return v / (window.devicePixelRatio || 1);            // calibration is stored in physical pixels, so browser zoom is handled
+}
+function mmPerDevPx() { return S.diag * 25.4 / Math.hypot(S.res.w, S.res.h); }
 function fitScreen() {
+  const stage = $("stage");
+  if (S.real) {
+    const w = Math.round(S.res.w * mmPerDevPx() * cssPxPerMm()), h = Math.round(w * S.res.h / S.res.w);
+    stage.style.overflow = "auto"; screenEl.style.margin = "auto";
+    screenEl.style.width = w + "px"; screenEl.style.height = h + "px";
+    $("realInfo").textContent = "Showing " + (w / cssPxPerMm()).toFixed(0) + " × " + (h / cssPxPerMm()).toFixed(0) + " mm. Calibrate once so this matches your monitor.";
+    return w / S.res.w;
+  }
+  stage.style.overflow = "hidden"; screenEl.style.margin = "";
+  $("realInfo").textContent = "";
+  return fitScreenToStage();
+}
+function fitScreenToStage() {
   const st = $("stage");
   const aw = st.clientWidth - 24, ah = st.clientHeight - 24;
   const ratio = S.res.w / S.res.h;
@@ -328,6 +362,11 @@ function renderCanvas() {
   screenEl.classList.toggle("nogrid", !S.grid);
   screenEl.classList.toggle("multi", selUids().length > 1);
   screenEl.textContent = "";
+  if (bgUrl) {
+    const bg = el("div", { class: "bg" });
+    bg.style.backgroundImage = "url(" + bgUrl + ")"; bg.style.backgroundSize = S.bgFit || "cover"; bg.style.opacity = String(S.bgOpacity == null ? 0.6 : S.bgOpacity);
+    screenEl.append(bg);
+  }
   for (const e of S.els) {
     if (!visibleInView(e)) continue;
     const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (selUids().includes(e.uid) ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") + (e.kind !== "stick" && (e.shape || S.shape) === "square" ? " sq" : "") });
@@ -618,7 +657,7 @@ function renderProps() {
   p.append(g);
   const px = el("div", { class: "muted", id: "pxInfo" });
   p.append(px);
-  function updatePx() { px.textContent = "≈ " + Math.round(e.w * S.res.w) + " × " + Math.round(e.h * S.res.h) + " px, at " + Math.round(e.x * S.res.w) + "," + Math.round(e.y * S.res.h); }
+  function updatePx() { px.textContent = "≈ " + Math.round(e.w * S.res.w) + " × " + Math.round(e.h * S.res.h) + " px (" + (e.w * S.res.w * mmPerDevPx()).toFixed(1) + " × " + (e.h * S.res.h * mmPerDevPx()).toFixed(1) + " mm on a " + S.diag + "\" screen), at " + Math.round(e.x * S.res.w) + "," + Math.round(e.y * S.res.h); }
   updatePx();
   p._geo = geo; p._updatePx = updatePx;
   const sq = el("button", { title: "Set the height so the element is as tall as it is wide in pixels (square proportions). For a square-looking button use Shape = Square.", onclick: () => { e.h = round4(clamp(e.w * S.res.w / S.res.h, 0.01, 1)); renderProps(); renderCanvas(); save(); } }, "Make size 1:1");
@@ -822,7 +861,7 @@ function parseLayerSpec(v) {
 function importLayout(L) {
   if (!L || L.format !== "artemis-layers") throw new Error('Not an "artemis-layers" file');
   const n = fresh();
-  n.res = S.res; n.snap = S.snap; n.grid = S.grid;
+  n.res = S.res; n.snap = S.snap; n.grid = S.grid; n.diag = S.diag; n.real = S.real; n.bgOpacity = S.bgOpacity; n.bgFit = S.bgFit;
   n.hideBuiltins = !!L.hideBuiltins;
   n.shape = L.shape === "round" || L.shape === "square" ? L.shape : "";
   n.layers = (L.layers && L.layers.length ? L.layers : [{ id: 0, name: "Main" }]).map((l) => ({ id: l.id, name: l.name || "Layer " + l.id, modifiers: (l.modifiers || []).map(String) }));
@@ -1090,7 +1129,9 @@ function setupHeader() {
   sel.addEventListener("change", () => {
     if (sel.value === "custom") { $("customRes").style.display = "flex"; return; }
     $("customRes").style.display = "none";
-    setRes(PRESETS[+sel.value][1], PRESETS[+sel.value][2]);
+    const pr = PRESETS[+sel.value];
+    if (pr[3]) { S.diag = pr[3]; $("diag").value = pr[3]; }
+    setRes(pr[1], pr[2]);
   });
   const custom = () => { const w = parseInt($("resW").value, 10), h = parseInt($("resH").value, 10); if (w >= 320 && h >= 320) setRes(w, h); };
   $("resW").addEventListener("change", custom); $("resH").addEventListener("change", custom);
@@ -1099,6 +1140,18 @@ function setupHeader() {
   $("grid").checked = S.grid; $("grid").addEventListener("change", () => { S.grid = $("grid").checked; renderCanvas(); save(); });
   $("hideBuiltins").checked = S.hideBuiltins; $("hideBuiltins").addEventListener("change", () => { S.hideBuiltins = $("hideBuiltins").checked; save(); });
   $("shapeSel").value = S.shape || ""; $("shapeSel").addEventListener("change", () => { S.shape = $("shapeSel").value; renderCanvas(); save(); });
+  $("bgInput").addEventListener("change", (ev) => {
+    const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
+    if (bgUrl) URL.revokeObjectURL(bgUrl);
+    bgUrl = URL.createObjectURL(f); renderCanvas();
+  });
+  $("bgClear").addEventListener("click", () => { if (bgUrl) URL.revokeObjectURL(bgUrl); bgUrl = ""; renderCanvas(); });
+  $("bgOpacity").value = S.bgOpacity; $("bgOpVal").textContent = Math.round(S.bgOpacity * 100) + "%";
+  $("bgOpacity").addEventListener("input", () => { S.bgOpacity = parseFloat($("bgOpacity").value); $("bgOpVal").textContent = Math.round(S.bgOpacity * 100) + "%"; renderCanvas(); save(); });
+  $("bgFit").value = S.bgFit; $("bgFit").addEventListener("change", () => { S.bgFit = $("bgFit").value; renderCanvas(); save(); });
+  $("realSize").checked = !!S.real; $("realSize").addEventListener("change", () => { S.real = $("realSize").checked; renderCanvas(); save(); });
+  $("diag").value = S.diag; $("diag").addEventListener("input", () => { const v = parseFloat($("diag").value); if (v >= 3 && v <= 20) { S.diag = v; renderCanvas(); renderProps(); save(); } });
+  $("calib").addEventListener("click", openCalibration);
   $("addKey").addEventListener("click", () => addElement("key"));
   $("addSwitch").addEventListener("click", () => addElement("switch"));
   $("addStick").addEventListener("click", () => addElement("stick"));
@@ -1117,6 +1170,27 @@ function setupHeader() {
   for (const k of ANDROID_KEYS) dl2.append(el("option", { value: k }));
   document.body.append(dl1, dl2);
 }
+function openCalibration() {
+  const CARD = 85.6;      // ID-1 card (bank card, driving licence) width in mm
+  let px = Math.round(CARD * cssPxPerMm());
+  const bar = el("div", { style: "height:46px;background:var(--accent);border-radius:6px;margin:14px 0;opacity:.85" });
+  const range = el("input", { type: "range", min: "150", max: "700", step: "1", value: String(px) });
+  const out = el("div", { class: "muted" }, "");
+  const show = () => { bar.style.width = px + "px"; out.textContent = px + " CSS px = 85.6 mm"; };
+  range.addEventListener("input", () => { px = parseInt(range.value, 10); show(); });
+  const close = () => ov.remove();
+  const save2 = el("button", { class: "primary", onclick: () => {
+    try { localStorage.setItem(CAL_KEY, String(px * (window.devicePixelRatio || 1) / CARD)); } catch (e) { /* ignore */ }
+    close(); renderCanvas(); renderProps();
+  } }, "Save");
+  const ov = el("div", { class: "modal" }, el("div", { class: "box", style: "height:auto;max-width:520px" },
+    el("div", { class: "mh" }, el("h2", {}, "Calibrate your monitor"), el("span", { style: "flex:1" }), el("button", { onclick: close }, "Cancel")),
+    el("div", { style: "padding:12px;overflow:auto" },
+      el("div", {}, "Hold a bank card or ID card (85.6 mm wide) flat against the screen, and drag the slider until the blue bar is exactly as wide as the card."),
+      bar, range, out, el("div", { style: "margin-top:12px" }, save2),
+      el("div", { class: "muted", style: "margin-top:8px" }, "Stored in this browser. Browser zoom is accounted for; recalibrate if you change monitor or its scaling."))));
+  document.body.append(ov); show();
+}
 function setRes(w, h) {
   // keep element sizes square in pixels when the aspect ratio changes
   const oldR = S.res.w / S.res.h, newR = w / h;
@@ -1128,6 +1202,7 @@ function renderAll() {
   renderView(); renderLayers(); renderGamepad(); renderCanvas(); renderProps(); renderWarnings();
   $("hideBuiltins").checked = S.hideBuiltins;
   $("shapeSel").value = S.shape || "";
+  $("realSize").checked = !!S.real; $("diag").value = S.diag; $("bgOpacity").value = S.bgOpacity; $("bgFit").value = S.bgFit;
 }
 window.addEventListener("resize", renderCanvas);
 setupHeader();

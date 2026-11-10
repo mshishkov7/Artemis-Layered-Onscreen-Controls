@@ -216,6 +216,18 @@ public class KeyBoardControllerConfigurationLoader {
         return button;
     }
 
+    /** Key codes 0x1001..0x1005 stand for mouse buttons (layered layouts: MOUSE_LEFT etc.). */
+    static final short MOUSE_BASE = 0x1000;
+
+    static void sendKeyOrMouse(final NvConnection conn, short key, boolean down, byte modifier) {
+        if ((key & 0xFF00) == MOUSE_BASE) {
+            byte b = (byte) (key & 0xFF);
+            if (down) conn.sendMouseButtonDown(b); else conn.sendMouseButtonUp(b);
+        } else {
+            conn.sendKeyboardInput(key, down ? KeyboardPacket.KEY_DOWN : KeyboardPacket.KEY_UP, modifier, (byte) 0);
+        }
+    }
+
     static KeyBoardDigitalButton createCustomButton(
             String elementId,
             final short[] keys,
@@ -243,7 +255,7 @@ public class KeyBoardControllerConfigurationLoader {
                     }
                     controller.vibrate(KeyEvent.ACTION_DOWN);
                     for (short key : keys) {
-                        conn.sendKeyboardInput(key, KeyboardPacket.KEY_DOWN, modifier[0], (byte) 0);
+                        sendKeyOrMouse(conn, key, true, modifier[0]);
                         modifier[0] |= getModifier(key);
                     }
                 }
@@ -263,7 +275,7 @@ public class KeyBoardControllerConfigurationLoader {
                     for (int pos = keys.length - 1; pos >= 0; pos--) {
                         short key = keys[pos];
                         modifier[0] &= (byte) ~getModifier(key);
-                        conn.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
+                        sendKeyOrMouse(conn, key, false, modifier[0]);
                     }
                 }
             });
@@ -273,7 +285,7 @@ public class KeyBoardControllerConfigurationLoader {
                 public void onClick() {
                     controller.vibrate(KeyEvent.ACTION_DOWN);
                     for (short key : keys) {
-                        conn.sendKeyboardInput(key, KeyboardPacket.KEY_DOWN, modifier[0], (byte) 0);
+                        sendKeyOrMouse(conn, key, true, modifier[0]);
                         modifier[0] |= getModifier(key);
                     }
                 }
@@ -288,7 +300,7 @@ public class KeyBoardControllerConfigurationLoader {
                     for (int pos = keys.length - 1; pos >= 0; pos--) {
                         short key = keys[pos];
                         modifier[0] &= (byte) ~getModifier(key);
-                        conn.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
+                        sendKeyOrMouse(conn, key, false, modifier[0]);
                     }
                 }
             });

@@ -143,7 +143,16 @@ const PRESETS = [
   ["Tablet 16:10 (2560×1600)", 2560, 1600],
 ];
 const STORE_KEY = "layered-layout-editor-v1";
-const NAMED_VK = ["CTRL", "SHIFT", "ALT", "WIN", "META", "SPACE", "ENTER", "ESC", "TAB"];
+const KEY_GROUPS = {
+  "Special": ["ESC","TAB","SPACE","ENTER","BACKSPACE","DELETE","INSERT","HOME","END","PGUP","PGDN","CAPS","PAUSE","PRINTSCREEN"],
+  "Modifiers": ["CTRL","SHIFT","ALT","WIN","LCTRL","RCTRL","LSHIFT","RSHIFT","LALT","RALT"],
+  "Punctuation": ["TILDE","MINUS","EQUALS","COMMA","PERIOD","SLASH","SEMICOLON","QUOTE","LBRACKET","RBRACKET","BACKSLASH"],
+  "Arrows": ["UP","DOWN","LEFT","RIGHT"],
+  "Numpad": ["NUM0","NUM1","NUM2","NUM3","NUM4","NUM5","NUM6","NUM7","NUM8","NUM9"],
+  "Mouse": ["MOUSE_LEFT","MOUSE_RIGHT","MOUSE_MIDDLE","MOUSE_X1","MOUSE_X2"],
+  "Function": Array.from({ length: 12 }, (_, i) => "F" + (i + 1)),
+};
+const NAMED_VK = ["ESCAPE","RETURN","BKSP","CAPSLOCK","PAGEUP","PAGEDOWN","DEL","GRAVE","BACKTICK","PLUS","META"].concat(...Object.values(KEY_GROUPS));
 const ANDROID_KEYS = ["W","A","S","D","Q","E","R","F","Z","X","C","V","SPACE","TAB","ENTER","ESCAPE","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","SHIFT_LEFT","CTRL_LEFT","ALT_LEFT","DEL","GRAVE","MINUS","EQUALS","COMMA","PERIOD","SLASH","PAGE_UP","PAGE_DOWN","MOVE_HOME","MOVE_END","INSERT"];
 
 /* ---------- state ---------- */
@@ -211,13 +220,19 @@ function validAndroidKey(tok) {
   const u = tok.trim().toUpperCase().replace(/^KEYCODE_/, "");
   return /^[A-Z0-9]$/.test(u) || /^F([1-9]|1[0-2])$/.test(u) || ANDROID_KEYS.includes(u) || /^\d+$/.test(u);
 }
-function parseKeys(text) { return text.split(/[+,\s]+/).map((s) => s.trim()).filter(Boolean).map((s) => (s.length === 1 ? s.toUpperCase() : s)); }
+const CHAR_KEYS = { "`": "TILDE", "~": "TILDE", "-": "MINUS", "=": "EQUALS", ",": "COMMA", ".": "PERIOD", "/": "SLASH", ";": "SEMICOLON", "'": "QUOTE", "[": "LBRACKET", "]": "RBRACKET", "\\": "BACKSLASH" };
+function parseKeys(text) {
+  const toks = text.split(/[+,\s]+/).map((s) => s.trim()).filter(Boolean);
+  if (/^[+]+$/.test(text.trim())) return ["PLUS"];
+  return toks.map((s) => (CHAR_KEYS[s] || (s.length === 1 ? s.toUpperCase() : s)));
+}
 
 /* ---------- element creation ---------- */
 function addElement(kind) {
   const base = { uid: ++S.counter, kind, layers: "global" };
   const view = S.view === "all" ? null : Number(S.view);
   if (view != null) base.layers = [view];
+  else if (kind === "key" && S.layers.length > 1) base.layers = [S.layers[0].id];
   const w = kind === "stick" ? 0.1 : 0.05;
   const h = round4(w * S.res.w / S.res.h);
   const e = Object.assign(base, { x: round4(0.4 + (S.els.length % 8) * 0.02), y: round4(0.35 + (S.els.length % 8) * 0.03), w, h, name: "", id: "" });
@@ -251,7 +266,7 @@ function renderCanvas() {
   screenEl.textContent = "";
   for (const e of S.els) {
     if (!visibleInView(e)) continue;
-    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (e.uid === S.sel ? " sel" : "") });
+    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (e.uid === S.sel ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") });
     n.dataset.uid = e.uid;
     n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%";
     n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%";
@@ -277,7 +292,7 @@ function renderLayers() {
     const mod = el("input", { type: "text", value: l.modifiers.join("+"), placeholder: "mods", title: "Modifiers held on this layer, e.g. CTRL or CTRL+SHIFT", style: "max-width:70px" });
     mod.addEventListener("input", () => { l.modifiers = parseKeys(mod.value); mod.classList.toggle("invalid", !l.modifiers.every(validVk)); save(); renderWarnings(); });
     mod.classList.toggle("invalid", !l.modifiers.every(validVk));
-    const show = el("button", { title: "Show only this layer", onclick: () => { S.view = String(l.id); renderAll(); } }, "👁");
+    const show = el("button", { title: "Show only this layer (click again for all). Global elements appear faded.", onclick: () => { S.view = String(S.view) === String(l.id) ? "all" : String(l.id); renderAll(); } }, "👁");
     const del = el("button", { class: "danger", title: "Delete layer", onclick: () => removeLayer(l.id) }, "×");
     row.append(name, mod, show, del);
     box.append(row);
@@ -370,6 +385,10 @@ function renderProps() {
 
   if (e.kind === "key") {
     p.append(field("Keys (e.g. CTRL+1, F5, 0x31)", textInput(e.keys.join("+"), (v, i) => { e.keys = parseKeys(v); i.classList.toggle("invalid", !e.keys.length || !e.keys.every(validVk)); renderWarnings(); })));
+    const pick = el("select", {}, el("option", { value: "" }, "Add a key…"));
+    for (const g in KEY_GROUPS) { const og = el("optgroup", { label: g }); for (const k of KEY_GROUPS[g]) og.append(el("option", { value: k }, k)); pick.append(og); }
+    pick.addEventListener("change", () => { if (!pick.value) return; e.keys.push(pick.value); save(); renderProps(); renderCanvas(); renderWarnings(); });
+    p.append(field("Special keys, tilde, mouse buttons", pick));
     const st = el("label", { class: "check" }); const cb = el("input", { type: "checkbox" }); cb.checked = !!e.sticky;
     cb.addEventListener("change", () => { e.sticky = cb.checked; save(); renderCanvas(); });
     st.append(cb, "Sticky (long-press latches, e.g. Shift)"); p.append(st);
@@ -414,6 +433,12 @@ function renderProps() {
   p._geo = geo; p._updatePx = updatePx;
   const sq = el("button", { onclick: () => { e.h = round4(clamp(e.w * S.res.w / S.res.h, 0.01, 1)); renderProps(); renderCanvas(); save(); } }, "Make square");
   const dup = el("button", { onclick: duplicate }, "Duplicate");
+  if (S.layers.length > 1) {
+    const cl = el("select", { title: "Copy this element to another layer at the same position" }, el("option", { value: "" }, "Clone to layer…"));
+    for (const l of S.layers) cl.append(el("option", { value: String(l.id) }, l.id + " " + l.name));
+    cl.addEventListener("change", () => { if (cl.value !== "") cloneToLayer(Number(cl.value)); });
+    p.append(el("div", { style: "margin-top:8px" }, cl));
+  }
   const del = el("button", { class: "danger", onclick: removeSelected }, "Delete");
   p.append(el("div", { class: "row", style: "margin-top:8px" }, sq, dup, del));
 }
@@ -429,6 +454,13 @@ function duplicate() {
   c.uid = ++S.counter; c.id = nextId(e.kind === "key" ? "b" : e.kind === "switch" ? "sw" : "stick");
   c.x = clamp(e.x + 0.02, 0, 1 - e.w); c.y = clamp(e.y + 0.03, 0, 1 - e.h);
   S.els.push(c); S.sel = c.uid; renderAll();
+}
+function cloneToLayer(layerId) {
+  const e = selEl(); if (!e) return;
+  const c = JSON.parse(JSON.stringify(e));
+  c.uid = ++S.counter; c.id = nextId(e.kind === "key" ? "b" : e.kind === "switch" ? "sw" : "stick");
+  c.layers = [layerId];
+  S.els.push(c); S.sel = c.uid; S.view = String(layerId); renderAll();
 }
 function removeSelected() {
   if (S.sel == null) return;

@@ -311,6 +311,23 @@ public final class LayeredLayoutLoader {
     }
 
     /** Windows virtual-key code: "0x31", "VK_RETURN", or a convenience name like "A", "F5", "CTRL". */
+    private static final java.util.Map<String, Short> ALIASES = new java.util.HashMap<>();
+    static {
+        Object[][] t = {
+            {"BACKSPACE", 0x08}, {"BKSP", 0x08}, {"RETURN", 0x0D}, {"ESCAPE", 0x1B}, {"CAPS", 0x14}, {"CAPSLOCK", 0x14},
+            {"PAUSE", 0x13}, {"PGUP", 0x21}, {"PAGEUP", 0x21}, {"PGDN", 0x22}, {"PAGEDOWN", 0x22}, {"END", 0x23}, {"HOME", 0x24},
+            {"LEFT", 0x25}, {"UP", 0x26}, {"RIGHT", 0x27}, {"DOWN", 0x28}, {"PRINTSCREEN", 0x2C}, {"INSERT", 0x2D},
+            {"DELETE", 0x2E}, {"DEL", 0x2E},
+            {"LSHIFT", 0xA0}, {"RSHIFT", 0xA1}, {"LCTRL", 0xA2}, {"RCTRL", 0xA3}, {"LALT", 0xA4}, {"RALT", 0xA5},
+            {"SEMICOLON", 0xBA}, {"EQUALS", 0xBB}, {"PLUS", 0xBB}, {"COMMA", 0xBC}, {"MINUS", 0xBD}, {"PERIOD", 0xBE},
+            {"SLASH", 0xBF}, {"TILDE", 0xC0}, {"GRAVE", 0xC0}, {"BACKTICK", 0xC0},
+            {"LBRACKET", 0xDB}, {"BACKSLASH", 0xDC}, {"RBRACKET", 0xDD}, {"QUOTE", 0xDE},
+            {"MOUSE_LEFT", 0x1001}, {"MOUSE_MIDDLE", 0x1002}, {"MOUSE_RIGHT", 0x1003}, {"MOUSE_X1", 0x1004}, {"MOUSE_X2", 0x1005},
+        };
+        for (Object[] e : t) ALIASES.put((String) e[0], (short) (int) (Integer) e[1]);
+        for (int i = 0; i < 10; i++) ALIASES.put("NUM" + i, (short) (0x60 + i));
+    }
+
     static short parseVk(String code) throws Exception {
         String c = code.trim();
         if (c.startsWith("0x") || c.startsWith("0X")) {
@@ -326,6 +343,8 @@ public final class LayeredLayoutLoader {
         if (u.matches("F([1-9]|1[0-9]|2[0-4])")) {
             return (short) (0x70 + Integer.parseInt(u.substring(1)) - 1);
         }
+        Short alias = ALIASES.get(u);
+        if (alias != null) return alias;
         switch (u) {
             case "CTRL": return 0xA2;
             case "SHIFT": return 0xA0;

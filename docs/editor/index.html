@@ -65,6 +65,7 @@
   .el.switch { border-style: dashed; }
   .el.stick { border-radius: 50%; }
   .el.stick::after { content: ""; position: absolute; width: 36%; height: 36%; border: 2px solid var(--btn); border-radius: 50%; }
+  .el.sq { border-radius: 0 !important; }
   .el.sticky { background: color-mix(in srgb, var(--accent) 22%, transparent); }
   .el.sel { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); z-index: 5; }
   .el.dim { opacity: .3; }
@@ -136,6 +137,8 @@
 
     <h2>Layout</h2>
     <label class="check"><input type="checkbox" id="hideBuiltins"> Hide the app's default buttons</label>
+    <div style="margin-top:6px"><label for="shapeSel">Button shape (all buttons)</label>
+      <select id="shapeSel"><option value="">App setting (previewed round)</option><option value="round">Round</option><option value="square">Square</option></select></div>
     <div class="muted">Gamepad analog sticks (the app's own overlay)</div>
     <div id="gamepadBox"></div>
 
@@ -182,6 +185,7 @@ function fresh() {
     layers: [{ id: 0, name: "Main", modifiers: [] }],
     els: [],
     hideBuiltins: true,
+    shape: "",
     gamepad: { left: null, right: null },
     builtins: null,
     snap: 0.005, grid: true, view: "all", sel: null, counter: 0,
@@ -300,13 +304,20 @@ function renderCanvas() {
   screenEl.textContent = "";
   for (const e of S.els) {
     if (!visibleInView(e)) continue;
-    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (selUids().includes(e.uid) ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") });
+    const n = el("div", { class: "el " + e.kind + (e.sticky ? " sticky" : "") + (selUids().includes(e.uid) ? " sel" : "") + (S.view !== "all" && e.layers === "global" ? " dim" : "") + (e.kind !== "stick" && (e.shape || S.shape) === "square" ? " sq" : "") });
     n.dataset.uid = e.uid;
     n.style.left = e.x * 100 + "%"; n.style.top = e.y * 100 + "%";
     n.style.width = e.w * 100 + "%"; n.style.height = e.h * 100 + "%";
     const pxH = e.h * S.res.h * scale;
     const ic = e.icon && icons[e.icon];
-    if (ic) n.append(el("img", { src: ic.url, alt: "" }));
+    if (ic) {
+      const im = el("img", { src: ic.url, alt: "" });
+      const sc = e.iconScale || 1;
+      im.style.inset = "auto"; im.style.width = 84 * sc + "%"; im.style.height = 84 * sc + "%";
+      im.style.left = 50 + (e.iconDx || 0) * 100 + "%"; im.style.top = 50 + (e.iconDy || 0) * 100 + "%";
+      im.style.transform = "translate(-50%,-50%)"; im.style.maxWidth = "none";
+      n.append(im);
+    }
     else if (e.kind !== "stick") { const l = el("div", { class: "lbl" }, e.name || e.id); l.style.fontSize = Math.max(8, pxH * 0.3) + "px"; n.append(l); }
     if (e.kind === "stick") n.append(el("div", { class: "tag" }, e.id));
     if (e.kind === "switch") n.append(el("div", { class: "tag" }, e.mode === "next" || e.mode === "prev" ? e.mode : e.mode + "→" + layerName(e.target)));
@@ -472,6 +483,27 @@ function iconControl(targets) {
   wrap.append(row);
   return wrap;
 }
+function styleControls(targets) {
+  const wrap = el("div", {});
+  const t0 = targets[0];
+  const shape = el("select", {}, el("option", { value: "" }, "Default (global setting)"), el("option", { value: "round" }, "Round"), el("option", { value: "square" }, "Square"));
+  shape.value = t0.shape || "";
+  shape.addEventListener("change", () => { for (const t of targets) t.shape = shape.value; renderCanvas(); save(); });
+  wrap.append(field("Shape", shape));
+  if (!targets.some((t) => t.icon)) { wrap.append(el("div", { class: "muted" }, "Pick an icon to get zoom and offset (the part outside the button is cut off).")); return wrap; }
+  const sl = (label, key, min, max, step, def, fmt) => {
+    const out = el("span", { class: "muted" }, fmt(t0[key] != null ? t0[key] : def));
+    const r = el("input", { type: "range", min, max, step, value: String(t0[key] != null ? t0[key] : def) });
+    r.addEventListener("input", () => { const v = parseFloat(r.value); for (const t of targets) t[key] = v; out.textContent = fmt(v); renderCanvas(); save(); });
+    return { row: el("div", {}, el("label", {}, label + " "), out, r), r, out, key, def, fmt };
+  };
+  const z = sl("Icon zoom", "iconScale", 0.5, 4, 0.05, 1, (v) => Math.round(v * 100) + "%");
+  const ox = sl("Icon offset X", "iconDx", -0.5, 0.5, 0.01, 0, (v) => Math.round(v * 100) + "%");
+  const oy = sl("Icon offset Y", "iconDy", -0.5, 0.5, 0.01, 0, (v) => Math.round(v * 100) + "%");
+  const reset = el("button", { onclick: () => { for (const t of targets) { t.iconScale = 1; t.iconDx = 0; t.iconDy = 0; } renderProps(); renderCanvas(); save(); } }, "Reset icon");
+  wrap.append(z.row, ox.row, oy.row, reset);
+  return wrap;
+}
 function renderProps() {
   const p = $("props"); p.textContent = "";
   p._geo = null; p._updatePx = null;
@@ -508,6 +540,7 @@ function renderProps() {
   if (e.kind !== "stick") {
     p.append(el("h2", {}, "Icon"));
     p.append(iconControl([e]));
+    p.append(styleControls([e]));
     p.append(field("Icon file name (or type it)", textInput(e.icon, (v, i) => { e.icon = v.trim(); renderCanvas(); renderWarnings(); }, { list: "iconList" })));
   } else {
     for (const dir of ["up", "down", "left", "right", "middle"]) {
@@ -535,7 +568,7 @@ function renderProps() {
   function updatePx() { px.textContent = "≈ " + Math.round(e.w * S.res.w) + " × " + Math.round(e.h * S.res.h) + " px, at " + Math.round(e.x * S.res.w) + "," + Math.round(e.y * S.res.h); }
   updatePx();
   p._geo = geo; p._updatePx = updatePx;
-  const sq = el("button", { onclick: () => { e.h = round4(clamp(e.w * S.res.w / S.res.h, 0.01, 1)); renderProps(); renderCanvas(); save(); } }, "Make square");
+  const sq = el("button", { title: "Set the height so the element is as tall as it is wide in pixels (square proportions). For a square-looking button use Shape = Square.", onclick: () => { e.h = round4(clamp(e.w * S.res.w / S.res.h, 0.01, 1)); renderProps(); renderCanvas(); save(); } }, "Make size 1:1");
   const dup = el("button", { onclick: duplicate }, "Duplicate");
   if (S.layers.length > 1) {
     const cl = el("select", { title: "Copy this element to another layer at the same position" }, el("option", { value: "" }, "Clone to layer…"));
@@ -562,7 +595,7 @@ function renderGroupProps(p, group) {
     row.append(el("div", {}, el("label", {}, k.toUpperCase()), i));
   }
   p.append(row);
-  const sq = el("button", { onclick: () => { for (const o of group) o.h = round4(clamp(o.w * S.res.w / S.res.h, 0.01, 1 - o.y)); renderProps(); renderCanvas(); save(); } }, "Make all square");
+  const sq = el("button", { onclick: () => { for (const o of group) o.h = round4(clamp(o.w * S.res.w / S.res.h, 0.01, 1 - o.y)); renderProps(); renderCanvas(); save(); } }, "Make all 1:1");
   const sw = el("button", { title: "Give every element the width and height of the first one you selected", onclick: () => { for (const o of group) { o.w = group[0].w; o.h = group[0].h; o.x = round4(Math.min(o.x, 1 - o.w)); o.y = round4(Math.min(o.y, 1 - o.h)); } renderProps(); renderCanvas(); save(); } }, "Match first");
   p.append(el("div", { class: "row", style: "margin-top:6px" }, sq, sw));
 
@@ -591,7 +624,7 @@ function renderGroupProps(p, group) {
     act("Spread ↕", dist("y"), "Even gaps between 3 or more elements, top to bottom")));
 
   const iconable = group.filter((o) => o.kind !== "stick");
-  if (iconable.length) { p.append(el("h2", {}, "Icon (applies to " + iconable.length + " buttons)")); p.append(iconControl(iconable)); }
+  if (iconable.length) { p.append(el("h2", {}, "Icon & shape (applies to " + iconable.length + " buttons)")); p.append(iconControl(iconable)); p.append(styleControls(iconable)); }
 
   p.append(el("h2", {}, "Layers (applies to all)"));
   p.append(layerPicker(group[0].layers, (v) => { for (const o of group) o.layers = v === "global" ? "global" : v.slice(); save(); }, true));
@@ -682,6 +715,7 @@ function layerValue(l) { return l === "global" ? "global" : l.length === 1 ? l[0
 function buildLayout() {
   const L = { format: "artemis-layers", version: 1 };
   if (S.hideBuiltins) L.hideBuiltins = true;
+  if (S.shape) L.shape = S.shape;
   L.layers = S.layers.map((l) => { const o = { id: l.id, name: l.name }; if (l.modifiers.length) o.modifiers = l.modifiers.slice(); return o; });
   L.buttons = []; L.sticks = [];
   for (const e of S.els) {
@@ -691,7 +725,13 @@ function buildLayout() {
       continue;
     }
     const b = Object.assign({ id: e.id, layer: layerValue(e.layers) }, geo, { name: e.name });
-    if (e.icon) b.icon = pngName(e.icon);
+    if (e.icon) {
+      b.icon = pngName(e.icon);
+      if (e.iconScale && e.iconScale !== 1) b.iconScale = round4(e.iconScale);
+      if (e.iconDx) b.iconDx = round4(e.iconDx);
+      if (e.iconDy) b.iconDy = round4(e.iconDy);
+    }
+    if (e.shape) b.shape = e.shape;
     if (e.kind === "switch") {
       b.action = { type: "layer", mode: e.mode };
       if (e.mode === "hold" || e.mode === "toggle") b.action.target = e.target;
@@ -720,9 +760,12 @@ function importLayout(L) {
   const n = fresh();
   n.res = S.res; n.snap = S.snap; n.grid = S.grid;
   n.hideBuiltins = !!L.hideBuiltins;
+  n.shape = L.shape === "round" || L.shape === "square" ? L.shape : "";
   n.layers = (L.layers && L.layers.length ? L.layers : [{ id: 0, name: "Main" }]).map((l) => ({ id: l.id, name: l.name || "Layer " + l.id, modifiers: (l.modifiers || []).map(String) }));
   for (const b of L.buttons || []) {
     const e = { uid: ++n.counter, id: String(b.id), layers: parseLayerSpec(b.layer), x: +b.x || 0, y: +b.y || 0, w: +b.w || 0.05, h: +b.h || 0.05, name: b.name || "", icon: b.icon || "" };
+    if (b.shape === "round" || b.shape === "square") e.shape = b.shape;
+    if (b.iconScale) e.iconScale = +b.iconScale; if (b.iconDx) e.iconDx = +b.iconDx; if (b.iconDy) e.iconDy = +b.iconDy;
     if (b.action && b.action.type === "layer") { e.kind = "switch"; e.mode = b.action.mode || "hold"; e.target = b.action.target != null ? b.action.target : n.layers[0].id; }
     else { e.kind = "key"; e.keys = (b.keys || []).map(String); e.sticky = !!b.sticky; }
     n.els.push(e);
@@ -986,6 +1029,7 @@ function setupHeader() {
   $("snap").value = String(S.snap); $("snap").addEventListener("change", () => { S.snap = parseFloat($("snap").value); save(); });
   $("grid").checked = S.grid; $("grid").addEventListener("change", () => { S.grid = $("grid").checked; renderCanvas(); save(); });
   $("hideBuiltins").checked = S.hideBuiltins; $("hideBuiltins").addEventListener("change", () => { S.hideBuiltins = $("hideBuiltins").checked; save(); });
+  $("shapeSel").value = S.shape || ""; $("shapeSel").addEventListener("change", () => { S.shape = $("shapeSel").value; renderCanvas(); save(); });
   $("addKey").addEventListener("click", () => addElement("key"));
   $("addSwitch").addEventListener("click", () => addElement("switch"));
   $("addStick").addEventListener("click", () => addElement("stick"));
@@ -1014,6 +1058,7 @@ function setRes(w, h) {
 function renderAll() {
   renderView(); renderLayers(); renderGamepad(); renderCanvas(); renderProps(); renderWarnings();
   $("hideBuiltins").checked = S.hideBuiltins;
+  $("shapeSel").value = S.shape || "";
 }
 window.addEventListener("resize", renderCanvas);
 setupHeader();

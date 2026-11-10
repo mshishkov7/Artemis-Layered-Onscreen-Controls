@@ -8,6 +8,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Path;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
@@ -50,6 +51,8 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
     private String text = "";
     private int icon = -1;
     private String iconFile = null;
+    private Boolean squareShape = null;   // null = follow the app's keyboard-square setting
+    private float iconScale = 1f, iconDx = 0f, iconDy = 0f;
     private long timerLongClickTimeout = 300;
     private final Runnable longClickRunnable = new Runnable() {
         @Override
@@ -158,6 +161,20 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         invalidate();
     }
 
+    /** Per-button shape from a layered layout: true square, false round, null = app setting. */
+    public void setSquareShape(Boolean square) {
+        this.squareShape = square;
+        invalidate();
+    }
+
+    /** Icon zoom (1 = fit) and offset as fractions of the button size; the icon is clipped to the button shape. */
+    public void setIconAdjust(float scale, float dx, float dy) {
+        this.iconScale = Math.max(0.2f, Math.min(5f, scale));
+        this.iconDx = Math.max(-1f, Math.min(1f, dx));
+        this.iconDy = Math.max(-1f, Math.min(1f, dy));
+        invalidate();
+    }
+
     public void setSticky(boolean sticky) {
         this.sticky = sticky;
     }
@@ -185,7 +202,9 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         rect.right = getWidth() - rect.left;
         rect.bottom = getHeight() - rect.top;
 
-        if(PreferenceConfiguration.readPreferences(getContext()).enableKeyboardSquare){
+        final boolean square = squareShape != null ? squareShape
+                : PreferenceConfiguration.readPreferences(getContext()).enableKeyboardSquare;
+        if(square){
             canvas.drawRect(rect,paint);
         }else{
             canvas.drawOval(rect, paint);
@@ -194,11 +213,20 @@ public class KeyBoardDigitalButton extends keyBoardVirtualControllerElement impl
         Bitmap fileIcon = null;
         if (iconFile != null) {
             int inset = Math.max((int) paint.getStrokeWidth() * 2, getWidth() / 12);
-            fileIcon = IconCache.get(getContext(), iconFile, getWidth() - 2 * inset, getHeight() - 2 * inset);
+            fileIcon = IconCache.get(getContext(), iconFile,
+                    Math.round((getWidth() - 2 * inset) * iconScale), Math.round((getHeight() - 2 * inset) * iconScale));
             if (fileIcon != null) {
                 Paint bitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
                 bitmapPaint.setAlpha(shouldSetPressed ? 160 : 255);
-                canvas.drawBitmap(fileIcon, (getWidth() - fileIcon.getWidth()) / 2f, (getHeight() - fileIcon.getHeight()) / 2f, bitmapPaint);
+                // anything zoomed or moved outside the button is cut off at the button outline
+                Path clip = new Path();
+                if (square) clip.addRect(rect, Path.Direction.CW); else clip.addOval(rect, Path.Direction.CW);
+                canvas.save();
+                canvas.clipPath(clip);
+                canvas.drawBitmap(fileIcon,
+                        (getWidth() - fileIcon.getWidth()) / 2f + iconDx * getWidth(),
+                        (getHeight() - fileIcon.getHeight()) / 2f + iconDy * getHeight(), bitmapPaint);
+                canvas.restore();
             }
         }
 

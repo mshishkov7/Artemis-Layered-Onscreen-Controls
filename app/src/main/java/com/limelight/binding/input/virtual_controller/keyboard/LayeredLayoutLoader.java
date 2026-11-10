@@ -184,10 +184,16 @@ public final class LayeredLayoutLoader {
         if (!icon.isEmpty()) {
             if (LayeredLayoutStore.isPlainFileName(icon)) {
                 button.setIconFile(icon);
+                button.setIconAdjust((float) b.optDouble("iconScale", 1.0),
+                        (float) b.optDouble("iconDx", 0.0), (float) b.optDouble("iconDy", 0.0));
             } else {
                 LimeLog.warning("Layered layout: ignoring icon \"" + icon + "\" (must be a plain file name)");
             }
         }
+
+        String shape = b.optString("shape", root.optString("shape", ""));
+        if ("square".equals(shape)) button.setSquareShape(true);
+        else if ("round".equals(shape)) button.setSquareShape(false);
 
         layers.assign(elementId, onLayers);
         place(controller, button, b, screen);
